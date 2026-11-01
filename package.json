@@ -1,17 +1,19 @@
 {
-  "name": "cortico-world-selftalk",
+  "name": "cortico-world-rhythm",
   "version": "0.3.0",
   "type": "module",
-  "description": "Coopanion / Cortico 的自主发言 World：安静一段时间后叫醒 Coo，由它自己决定开不开口、用什么工具；不想说就继续安静。（基于上游 0.2.2 的本地 fork）",
+  "private": true,
+  "description": "Coopanion / Cortico 的作息 World：安静一段时间后叫醒 Coo，由它自己决定开不开口、用什么工具，慢慢过上自己的日子。（基于 cortico-world-selftalk 0.2.2 的 fork）",
   "keywords": [
     "cortico-world",
     "cortico",
     "desktop-pet",
     "companion",
     "self-talk",
-    "proactive"
+    "proactive",
+    "daily-rhythm"
   ],
-  "author": "qwq-awa-qnq",
+  "author": "qwq-awa-qnq (upstream); fork maintained locally",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -43,7 +45,7 @@
   "cortico": {
     "kind": "world",
     "api": 6,
-    "displayName": "自主发言",
+    "displayName": "作息",
     "tags": [
       "companion"
     ],

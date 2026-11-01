@@ -1,5 +1,5 @@
 /**
- * 自主发言 World：一段时间没人跟 Coo 说话，就把它叫醒一次，让它自己决定开不开口、
+ * 作息 World：一段时间没人跟 Coo 说话，就把它叫醒一次，让它自己决定开不开口、
  * 先用哪个工具、还是什么都不说（end_turn）。叫醒靠一条 internal 事件投递，正文由
  * model-text.ts 按模型文本语言给；事件以 flush 投递，空闲的主循环收到即开始一轮。
  *
@@ -8,19 +8,19 @@
  * console.self）不算：它们不能被叫醒本身重置，不然第二轮叫醒就永远等不到。
  * 使用者的动作一出现，计数清零，安静计时从那个时刻重新开始。
  *
- * 时间参数都在 worlds.selftalk 里（config.ts），每个检查周期现读，WebUI 改完立即生效。
+ * 时间参数都在 worlds.rhythm 里（config.ts），每个检查周期现读，WebUI 改完立即生效。
  * 每个间隔（第一次叫醒与每次再次叫醒）各自乘以一次随机倍数（jitter），让节奏不机械。
  * 叫醒事件在投递时才渲染（pushDeferred）：如果排队期间使用者回来了，这一条作废。
  */
 import type { World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
 import type { Language } from 'cortico/core/language.ts';
 import { shortTime } from 'cortico/core/util.ts';
-import { selftalkConfigGroup, SELFTALK_ID, type SelfTalkConfigSection } from './config.ts';
+import { rhythmConfigGroup, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
 import { NUDGE_TEXT, type ModelLanguage } from './model-text.ts';
 import { uiText } from './ui-text.ts';
 
 /** 叫醒事件的类型。 */
-export const NUDGE_TYPE = 'selftalk.nudge';
+export const NUDGE_TYPE = 'rhythm.nudge';
 
 /** 检查周期：配置以分钟计，5 秒的粒度足够，也几乎不花什么。 */
 const CHECK_EVERY_MS = 5_000;
@@ -31,6 +31,10 @@ const SCAN_LIMIT = 500;
 /**
  * 使用者的动作：出现任何一种，就算有人在跟 Coo 互动，安静计时从头开始。
  * 内置两个对话渠道（桌宠与控制台）的全部人侧事件；Coo 自己的自录事件不在此列。
+ *
+ * 已知缺口（M1 要改）：这是硬编码白名单，装了别的渠道（例如微信桥的 `clawbridge.message`）
+ * 时，人在那个渠道里聊天不会重置计时。改成「任何 external 且非 self 的事件」前，
+ * 先确认没有周期性外部事件会误判成"有人回来了"。
  */
 const ACTIVITY_TYPES: ReadonlySet<string> = new Set([
   'desktop-pet.message',
@@ -48,17 +52,17 @@ function numberIn(value: unknown, fallback: number, min: number, max: number): n
   return Math.min(max, Math.max(min, n));
 }
 
-export interface SelfTalkOptions {
-  /** 组装层给的活引用：`worlds.selftalk`。 */
-  cfg: SelfTalkConfigSection;
+export interface RhythmOptions {
+  /** 组装层给的活引用：`worlds.rhythm`。 */
+  cfg: RhythmConfigSection;
   /** 部署时区，叫醒行里的时刻用它渲染。 */
   timezone: string;
   /** 模型文本语言；每条事件渲染时现取。 */
   language: () => ModelLanguage;
 }
 
-export class SelfTalkWorld implements World {
-  readonly id = SELFTALK_ID;
+export class RhythmWorld implements World {
+  readonly id = RHYTHM_ID;
 
   private host: WorldHost | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -73,7 +77,7 @@ export class SelfTalkWorld implements World {
   /** 第一次叫醒间隔的随机倍数（1–1+jitter），一段安静里固定，免得来回抖。 */
   private jitterFactor = 1;
 
-  constructor(private readonly opts: SelfTalkOptions) {}
+  constructor(private readonly opts: RhythmOptions) {}
 
   /** 不加环境段：机制只通过叫醒事件本身说明，不占每次请求的前缀。 */
   envPromptVars(): null {
@@ -92,7 +96,7 @@ export class SelfTalkWorld implements World {
         state: 'online',
         hint: quietMinutes > 0 ? t.lampHint(quietMinutes, maxRounds) : t.lampOff,
       }],
-      config: [selftalkConfigGroup(language ?? 'zh')],
+      config: [rhythmConfigGroup(language ?? 'zh')],
     };
   }
 
@@ -182,7 +186,7 @@ export class SelfTalkWorld implements World {
     this.lastNudgeAt = now;
     // 下一次「再次叫醒」间隔的随机倍数现在掷
     this.rollJitter();
-    host.log.info('自言自语:叫醒 Coo', { round: this.rounds, again });
+    host.log.info('作息:叫醒 Coo', { round: this.rounds, again });
     host.pushDeferred({
       type: NUDGE_TYPE,
       origin: 'internal',

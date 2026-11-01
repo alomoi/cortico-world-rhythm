@@ -4,7 +4,7 @@
  */
 import type { Language } from 'cortico/core/language.ts';
 
-export interface SelfTalkUi {
+export interface RhythmUi {
   label: string;
   configTitle: string;
   configDescription: string;
@@ -22,10 +22,10 @@ export interface SelfTalkUi {
   lampOff: string;
 }
 
-const zh: SelfTalkUi = {
-  label: '自主发言',
-  configTitle: '自主发言',
-  configDescription: '安静一段时间后叫醒 Coo，让它自己决定说不说话、做点什么。改这里立即生效。',
+const zh: RhythmUi = {
+  label: '作息',
+  configTitle: '作息',
+  configDescription: '安静一段时间后叫醒 Coo，让它自己决定说不说话、做点什么，慢慢过上自己的日子。改这里立即生效。',
   quietTitle: '安静多少分钟后叫醒',
   quietDescription: '没有人跟 Coo 说话多久之后叫醒它一次；0 表示关掉叫醒。',
   repeatTitle: '再次叫醒间隔',
@@ -41,10 +41,10 @@ const zh: SelfTalkUi = {
   lampOff: '在线：安静计时已关闭。',
 };
 
-const en: SelfTalkUi = {
-  label: 'Self-talk',
-  configTitle: 'Self-talk',
-  configDescription: 'After a quiet stretch the app wakes the bot so it can decide for itself whether to speak or do something. Changes apply immediately.',
+const en: RhythmUi = {
+  label: 'Rhythm',
+  configTitle: 'Rhythm',
+  configDescription: 'After a quiet stretch the app wakes the bot so it can decide for itself whether to speak or do something, and slowly settle into a life of its own. Changes apply immediately.',
   quietTitle: 'Wake after quiet minutes',
   quietDescription: 'How long nobody talks to the bot before it is woken once; 0 turns the timer off.',
   repeatTitle: 'Wake again after',
@@ -59,6 +59,6 @@ const en: SelfTalkUi = {
 };
 
 /** 界面文案语言：zh 与 zh-Hant 用中文，其余（含未指明）用英文，与 Coopanion 的界面语言取法一致。 */
-export function uiText(language: Language | undefined): SelfTalkUi {
+export function uiText(language: Language | undefined): RhythmUi {
   return language === 'zh' || language === 'zh-Hant' || language === undefined ? zh : en;
 }

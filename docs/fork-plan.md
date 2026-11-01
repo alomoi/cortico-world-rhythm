@@ -1,13 +1,16 @@
-# 自主发言 fork · 改进计划
+# 作息（rhythm）fork · 改进计划
 
 > 状态：**准备阶段完成，功能范围待定**。这份文件用于和主人对齐「改什么、按什么顺序改」。
 > 环境与代码基线见 `dev-notes.md`；宿主能力见 `host-apis.md`；Coo 现有能力见 `coo-capabilities.md`。
+>
+> 目标一句话：**让桌宠有自己的作息，像在过日子**——该醒的时候醒、该安静的时候安静、
+> 说话接得上茬、用户看得见也管得住。
 
 ---
 
 ## 1. 目标
 
-把上游 0.2.2 的「定时闹钟式叫醒」改造成**更像 Coo 自己的主动行为**：
+把上游 0.2.2 的「定时闹钟式叫醒」改造成**更像 Coo 自己的作息**：
 
 - 该开口的时候开口，不该开口的时候绝不出声；
 - 说得有内容（接得上刚才的话题），不是每次同一句模板；
@@ -17,14 +20,14 @@
 
 ---
 
-## 2. 需要主人拍板的四件事
+## 2. 已拍板与待拍板
 
-| # | 问题 | 选项 | 本鱼的倾向 |
-|---|---|---|---|
-| Q1 | 包名与 World id 是否沿用 | (a) 沿用 `cortico-world-selftalk` + id `selftalk`：直接顶替现装版本，`worlds.selftalk` 配置无缝延续 (b) 改名 + 换 id：可与上游并存、便于对照，但配置要重来 | **(a)**，改装有风险但配置与面板路径都不变 |
-| Q2 | 是否允许装进 Coopanion 安装目录 | 需要在 `data\extensions` 里 `pnpm add` 并重启 Coo 进程 | 功能做完、本地自检全绿后再**单独问一次**再装 |
-| Q3 | 是否需要自定义 WebUI 面板 | (a) 只用内置配置组 + 状态灯 (b) 加面板（需要预构建浏览器 bundle `dist/webui.js`） | 先做 (a) 的增强版（徽标/多灯/富状态），面板作为第二阶段 |
-| Q4 | 功能优先级 | 见第 3 节的 A/B/C/D 组 | 建议顺序：A → C → B → D |
+| # | 问题 | 结论 / 选项 |
+|---|---|---|
+| Q1 | 包名与 World id | ✅ **已定**：改名以匹配新目标——包 `cortico-world-rhythm`、id `rhythm`、显示名「作息」。与上游并存，但配置不共享，启用前先停用上游「自主发言」。 |
+| Q2 | 是否允许装进 Coopanion 安装目录 | ⏳ 功能做完、本地自检全绿后再单独问（主人已选此项）。 |
+| Q3 | 是否需要自定义 WebUI 面板 | ⏳ 未定。先做不需要 bundle 的增强（状态灯倒计时 / 徽标）；面板（需要预构建 `dist/webui.js`）留到第二阶段。 |
+| Q4 | 功能优先级 | ⏳ 主人将发来功能清单；在此之前按 A → C → B → D 排（见第 3 节）。 |
 
 ---
 
@@ -34,7 +37,7 @@
 
 1. **World 拿不到 `TimersApi`、`injectInternal`、`deliveryGate`**——那些在 Persona 的 `CoreApi` 上。
    所以现在的 5 秒轮询 + `setTimeout` 是**正常做法**，不是临时方案；跨重启的计划得自己存
-   （`ctx.persist()` 写 `worlds.selftalk`，或 `dataDir` 里放状态文件）。
+   （`ctx.persist()` 写 `worlds.rhythm`，或 `dataDir` 里放状态文件）。
 2. **`flush` 不会打断正在跑的回合**，只把队列置为可投递，等轮边界（工具全返回 / 下一次请求前）。
    模型正跑长工具时，叫醒会**迟到几秒到几十秒**；要抢话只能 `preempt`/`interrupt`，而它们会消耗
    轮数预算。→ 用 `onRunPhase` 判断「现在是不是 idle」，idle 才叫醒，比盲目 flush 更稳。
@@ -52,18 +55,18 @@
 
 ### A. 正确性：别在人家聊天时插嘴（最高优先级）
 
-**现状**：`src/world.ts:35-43` 的 `ACTIVITY_TYPES` 只认 `desktop-pet.*` 与 `console.*`。
+**现状**：`src/world.ts:39-48` 的 `ACTIVITY_TYPES` 只认 `desktop-pet.*` 与 `console.*`。
 装了微信桥（`cortico-world-wechat-clawbridge`）后，用户在微信里聊得火热，插件仍在计时，
 到点就往会话里插一条「安静了 15 分钟」。
 
 **已证实**：微信桥每条来消息都推 `clawbridge.message`（`clawbridge/plugin/src/config.js:19` 定义，
 `world.js:1019` 投递，`origin` 缺省为 external），这个类型不在白名单里 → 微信聊天**不会**重置计时。
-本机 `clawbridge` 与 `selftalk` 同时启用，这个坑是真机上的。
+本机 `clawbridge` 与上游 `selftalk` 同时启用，这个坑是真机上的；本 fork 继承了同一份白名单。
 
 **做法**：活动判定从「类型白名单」改成「来源判定」——
 
 - 视为活动：`origin === 'external'` 且类型不在「Coo 自己说的话」集合里；
-- 或者：可配置渠道表 `worlds.selftalk.activityTypes`（默认空 = 自动发现全部外部渠道），
+- 或者：可配置渠道表 `worlds.rhythm.activityTypes`（默认空 = 自动发现全部外部渠道），
   面板里给一个「当前已观察到的渠道」列表便于核对；
 - 判定依据仍以事件库为准（`store.range`），但可加 `origin: 'external'` 过滤降低扫描量。
 
@@ -90,8 +93,8 @@ M1 里加两条**前置检查**：事件库尾部若还有未投递的外部事�
 
 ### C. 可观测与可控
 
-1. **持久化** `dataDir/selftalk-state.json`：`rounds`、`lastNudgeAt`、`todayCount`、`lastOutcome`；
-   重启进程不丢。注意只写非敏感字段。（`ctx.persist()` 会写 `config.json` 的 `worlds.selftalk`，
+1. **持久化** `dataDir/rhythm-state.json`：`rounds`、`lastNudgeAt`、`todayCount`、`lastOutcome`；
+   重启进程不丢。注意只写非敏感字段。（`ctx.persist()` 会写 `config.json` 的 `worlds.rhythm`，
    适合"参数"，不适合"运行时状态"——两处别混。）
 2. **状态灯带倒计时**：`webUi().lamps[].hint` 每次 WebUI 请求现算，可以写「距下次叫醒约 X 分钟 /
    今日第 N 次」——**不需要浏览器 bundle**，先做这个。
@@ -102,7 +105,7 @@ M1 里加两条**前置检查**：事件库尾部若还有未投递的外部事�
 
 ### D. 主动能力（更大，先讨论）
 
-1. **让 Coo 自己安排叫醒**：`selftalk_schedule` 工具（「今晚 9 点提醒我跟她说晚安」）。
+1. **让 Coo 自己安排叫醒**：`rhythm_schedule` 工具（「今晚 9 点提醒我跟她说晚安」）。
    注意 World 没有定时器 API，得自己存「计划的时刻」并在 `start()` 里对账；
    并且要和 `coopanion` 的 `alarm_set` 划清界限（那个是"到点叫醒 Coo"，本插件的叫醒是"安静后试探要不要说话"）。
 2. **跨 World 联动**：叫醒时把「最近一次对话摘要」或「未完成的待办」带进正文
@@ -132,7 +135,7 @@ M1 里加两条**前置检查**：事件库尾部若还有未投递的外部事�
 ## 5. 验证策略
 
 1. **本地**：假宿主 + 假时钟的冒烟测试覆盖所有时间分支；新增配置键必须先在 `defaults()` 里出现。
-2. **真机**：装包重启后，把 `quietMinutes` 调到 1 分钟观察一轮；`core.log` 里过滤 `selftalk`。
+2. **真机**：装包重启后，把 `quietMinutes` 调到 1 分钟观察一轮；`core.log` 里过滤 `worlds.rhythm`。
 3. **回归**：每次改 `describe.json` 都要 `--write`，别让市场元数据与代码不一致。
 4. **不装的验证**：只改内部逻辑（world.ts）时，重启 World 即可，不必重启整个进程。
 
@@ -142,10 +145,10 @@ M1 里加两条**前置检查**：事件库尾部若还有未投递的外部事�
 
 - 把 `enabled`、配置段、事件类型改坏 → 面板打不开 / 插件静默失效；靠 `check.mjs` 兜底。
 - 活动判定放宽后误判 → Coo 永远等不到叫醒；需要「最后活动时刻」在状态灯或日志里可见。
-- **World 被隐藏时**（`pet_quiet`、控制台把自主发言藏起来）：`pushDeferred` 直接被丢，
+- **World 被隐藏时**（`pet_quiet`、控制台把「作息」藏起来）：`pushDeferred` 直接被丢，
   看起来像"插件没反应"。日志与状态灯必须能区分「没到时间」和「被丢掉」。
 - **`render()` 有 3 秒期限**：内容感知里若读太多事件会超时，事件被静默丢弃。
 - 免打扰时段的时区：部署 `timezone` 可能为空（回落到系统时区，`core/config.ts:111`），一律用 `ctx.timezone`。
 - 与 `alarm_set` / Heartbeat 抢叫醒：改动不要额外引入第三套定时机制。
-- 装机顶替上游后想回滚：保留 `0.2.2` 的 tgz 或记录 npm 版本，`pnpm remove` 后重装即可。
+- 与上游并存/切换时想回滚：上游包没被顶掉，控制台停用「作息」即可回到原状；两边配置段与状态互不影响。
 - 不要把 token、完整用户 id、本机绝对路径写进日志/状态文件。

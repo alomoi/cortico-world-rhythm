@@ -64,7 +64,8 @@ async function main() {
   // 1. manifest
   const meta = pkg.cortico ?? {};
   const manifestOk = [
-    [definition.id === 'selftalk', `definition id is ${definition.id}`],
+    [definition.id === 'rhythm', `definition id is ${definition.id}`],
+    [definition.label === meta.displayName, `definition label matches cortico.displayName (${definition.label})`],
     [meta.kind === 'world', 'cortico.kind is world'],
     [meta.api === 6, `cortico.api is ${meta.api}`],
     [typeof meta.displayName === 'string' && meta.displayName.length > 0, 'cortico.displayName is set'],

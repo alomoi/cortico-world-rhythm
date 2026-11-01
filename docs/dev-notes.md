@@ -1,11 +1,15 @@
-# 自主发言（selftalk）fork · 开发笔记
+# 作息（rhythm）fork · 开发笔记
 
 > 这份文件只写**本地开发环境与这个 fork 的工作方式**。功能设计见 `fork-plan.md`，
 > 宿主 API 详见 `host-apis.md`，Coo 现有能力详见 `coo-capabilities.md`。
 >
 > fork 基线：`cortico-world-selftalk@0.2.2`（npm 上最新版，2026-10 装机时的版本）。
+> **本 fork 已改名**：包 `cortico-world-rhythm`、World id `rhythm`、显示名「作息」。
 > 上游 GitHub 仓库在本机**连不上**（`git ls-remote` → `Recv failure: Connection was reset`，
 > 系统代理 `127.0.0.1:10808` 未开启），所以 fork 起点是安装目录里已装的源码，没有 git 历史。
+>
+> 改名带来的直接后果：配置段从 `worlds.selftalk` 变成 `worlds.rhythm`，上游那份配置（本机 30/45/3/0.2）
+> 不会自动搬过来；两套同时启用会各叫各的（双份 token、双份插嘴）。真机启用前先停用上游「自主发言」。
 
 ---
 
@@ -59,12 +63,14 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 
 ## 3. 这个插件挂在哪里
 
-- 包名 `cortico-world-selftalk`，World id **`selftalk`**，`cortico.kind = "world"`、`cortico.api = 6`。
+- 包名 `cortico-world-rhythm`，World id **`rhythm`**，`cortico.kind = "world"`、`cortico.api = 6`、
+  显示名「作息」（上游是 `cortico-world-selftalk` / `selftalk` / 「自主发言」）。
 - 入口 `src/index.ts` 导出 `WorldDefinition`：`id` / `label` / `defaults()` / `create()` / `describe`。
 - 框架用 `module.registerHooks` 把 `cortico/*` 映射到宿主 `src/*`（`extensions/runtime.ts`），
   扩展与框架共享同一份模块实例；源码是 TypeScript，由宿主自带 `tsx` 直接加载，**无需构建**。
-- 配置段 `worlds.selftalk`，WebUI 改完立即生效（每个 5 秒检查周期现读）。
+- 配置段 `worlds.rhythm`，WebUI 改完立即生效（每个 5 秒检查周期现读）。
 - 默认 `enabled: false`，是否启用由 bot 声明与部署配置决定。
+- 日志前缀（fork）：`worlds.rhythm: 作息:叫醒 Coo`；上游仍是 `worlds.selftalk: 自言自语:叫醒 Coo`。
 
 ### 本机当前部署（2026-11-01 读 `config.json`）
 
@@ -72,13 +78,17 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 |---|---|
 | bot | `cormini`，显示名「小肥鱼」 |
 | 语言 | `zh` |
-| `worlds.selftalk` | **已启用**：`quietMinutes=30`、`repeatMinutes=45`、`maxRounds=3`、`jitter=0.2` |
+| `worlds.selftalk`（**上游插件**） | **已启用**：`quietMinutes=30`、`repeatMinutes=45`、`maxRounds=3`、`jitter=0.2` |
+| `worlds.rhythm`（**本 fork**） | 尚未安装，无配置段 |
 | 同时启用的其他 World | `websearch`、`devtools`、`clawbridge`（微信桥）、`localvision` 未设 |
 
-⚠️ `clawbridge` 已启用 —— 微信里的人和 Coo 说话**不会重置**自主发言的安静计时（见第 5 节第 1 条），
+⚠️ `clawbridge` 已启用 —— 微信里的人和 Coo 说话**不会重置**安静计时（见第 5 节第 1 条），
 这是真机上最容易犯的错，改代码时优先处理。
 
-### 真机日志佐证（`core.log`，2026-11-01）
+⚠️ 本 fork 换了 id，上游不会自动消失。启用「作息」之前先在控制台停用上游「自主发言」，
+否则两个 World 各叫各的（双份 token、双份插嘴）。
+
+### 真机日志佐证（`core.log`，2026-11-01，均来自**上游**插件）
 
 ```
 [16:42:08] INFO  worlds.selftalk: 自言自语:叫醒 Coo
@@ -100,28 +110,28 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 
 ---
 
-## 4. 基线行为（0.2.2）逐条拆解
+## 4. 当前行为（逻辑仍是 0.2.2 基线，只改了名字）
 
 | 行为 | 代码位置 | 说明 |
 |---|---|---|
 | 检查周期 5 秒 | `src/world.ts:26` | `setInterval(() => this.tick(), 5000)` |
 | 事件扫描窗口 500 条 | `src/world.ts:29` | `store.range({ limit: 500 })`，找最近的使用者动作 |
-| 「使用者动作」白名单 | `src/world.ts:35-43` | 只有 `desktop-pet.*`（message/speech/answer/touch/figure）与 `console.*`（message/invite） |
-| 时间参数 | `src/world.ts:120-129` | `quietMinutes` 0–720、`repeatMinutes` 1–720、`maxRounds` 0=不限、`jitter` 0–0.5 |
-| 安静判定 | `src/world.ts:153-175` | 首次：`lastActivitySeen + quiet × jitter`；再次：`lastNudgeAt + repeat × jitter` |
-| 叫醒投递 | `src/world.ts:177-198` | `pushDeferred(..., { trigger: 'flush' })`，`origin: 'internal'` |
+| 「使用者动作」白名单 | `src/world.ts:39-48` | 只有 `desktop-pet.*`（message/speech/answer/touch/figure）与 `console.*`（message/invite） |
+| 时间参数 | `src/world.ts:124-133` | `quietMinutes` 0–720、`repeatMinutes` 1–720、`maxRounds` 0=不限、`jitter` 0–0.5 |
+| 安静判定 | `src/world.ts:157-179` | 首次：`lastActivitySeen + quiet × jitter`；再次：`lastNudgeAt + repeat × jitter` |
+| 叫醒投递 | `src/world.ts:181-202` | `pushDeferred(..., { trigger: 'flush' })`，`origin: 'internal'` |
 | 投递位置 | `core/loop.ts:706-712` | internal 正文拼进同一条 user 消息的正文行，**不进 system 前缀** |
 | 投递时机 | `core/bus.ts:107-110` | `flush` 不打断正在跑的回合，等轮边界（工具全返回或下一次请求前） |
 | 渲染期限 | `core/loop.ts:243`、`846-855` | `render()` 超过 3 秒、抛错或返回 `null` 都等于这条事件不存在 |
-| 排队作废 | `src/world.ts:190-193` | `render()` 时若期间有新人侧事件 → 返回 `null`，这条不投递 |
+| 排队作废 | `src/world.ts:194-199` | `render()` 时若期间有新人侧事件 → 返回 `null`，这条不投递 |
 | 叫醒正文 | `src/model-text.ts` | 中文/英文两版，开头带 `HH:MM`；语言读部署 `config.json` 的 `language` |
 | WebUI | `src/ui-text.ts`、`src/config.ts` | 一个状态灯 + 一个配置组；没有自定义面板 |
-| 工具 | `src/index.ts`、`world.ts:100` | 没有工具（`tools(): []`） |
+| 工具 | `src/index.ts`、`world.ts:104` | 没有工具（`tools(): []`） |
 
 **叫醒事件正文（首次）**：
 
 ```
-[15:32] [自主发言] 安静了大约 15 分钟，没有人跟你说话。现在你可以自己决定:想说话就在气泡里跟对方说点什么，想做事就用工具，自己跟自己说几句也可以；不想就结束这一轮。
+[15:32] [作息] 安静了大约 15 分钟，没有人跟你说话。现在你可以自己决定:想说话就在气泡里跟对方说点什么，想做事就用工具，自己跟自己说几句也可以；不想就结束这一轮。
 ```
 
 ---
@@ -131,7 +141,7 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 1. **只认两个渠道的人侧事件**：`ACTIVITY_TYPES` 硬编码 `desktop-pet.*` 与 `console.*`。
    微信桥推的是 `clawbridge.message`（`clawbridge/plugin/src/config.js:19`、`world.js:1019`），
    不在白名单里 → 用户在微信里聊天**不会**重置安静计时，插件会在人家正聊得热闹时插嘴。
-   本机 `clawbridge` 与 `selftalk` 都已启用，这是真机问题。
+   本机 `clawbridge` 与上游 `selftalk` 都已启用，这是真机问题（本 fork 沿用同一份白名单，问题一并继承）。
    → 应改成「任何非 self 的外部事件」或可配置渠道表。
 2. **叫醒是「定时闹钟」，不是「想起什么」**：每次正文一样，不看最近聊了什么；连续几次都没人理
    也照常按时叫。→ 需要内容感知 + 退避/自适应。
@@ -163,8 +173,9 @@ cd D:\文档\deepseek-harness\default-workspace\selftalk
 # 3) 重启 Coo 进程：控制台 →「扩展」→「重启进程」
 ```
 
-**注意**：同名包（`cortico-world-selftalk`）会顶掉现在装的 0.2.2。若想并存，得同时改包名与 World id，
-这会影响已有配置段 `worlds.selftalk`。装之前先定这件事（见 `fork-plan.md` 的待决问题）。
+**注意**：本 fork 换了包名与 id，可以和上游 `cortico-world-selftalk` **并存**（不会互相顶掉）。
+代价是配置不共享：上游那份 `worlds.selftalk`（30/45/3/0.2）要手工对应到 `worlds.rhythm`；
+而且两个都启用就会**各叫各的** —— 启用「作息」前先在控制台停用上游「自主发言」。
 
 ---
 
@@ -175,7 +186,7 @@ cd D:\文档\deepseek-harness\default-workspace\selftalk
 
 ```powershell
 $log = "$env:LOCALAPPDATA\Programs\Coopanion\data\logs\core.log"
-Get-Content $log -Tail 200 -Encoding utf8 | Select-String -Pattern 'selftalk'
+Get-Content $log -Tail 200 -Encoding utf8 | Select-String -Pattern 'worlds.rhythm'
 ```
 
 3. 关键路径落 JSON 快照到 `dataDir`（不要写 token / 本地绝对路径）。
@@ -187,7 +198,7 @@ Get-Content $log -Tail 200 -Encoding utf8 | Select-String -Pattern 'selftalk'
 
 - 源码保持**零依赖 ESM TypeScript**（跟宿主同构，`tsx` 直接加载）。
 - 人读文案放 `ui-text.ts`，给模型读的正文放 `model-text.ts`，两者都要 zh/en。
-- 新增配置键：必须同时出现在 `defaults()` 与配置组 schema 里，路径以 `worlds.selftalk.` 开头
+- 新增配置键：必须同时出现在 `defaults()` 与配置组 schema 里，路径以 `worlds.rhythm.` 开头
   （`dryMountWorld` 会检查，缺一个直接 FAIL）。
-- 新增工具：名字用 `selftalk_` 前缀，写进 `describe`，跑 `check.mjs --write` 更新 `describe.json`。
+- 新增工具：名字用 `rhythm_` 前缀，写进 `describe`，跑 `check.mjs --write` 更新 `describe.json`。
 - 新增事件：写进 `describe.events`（含 zh/en 描述与 trigger）。

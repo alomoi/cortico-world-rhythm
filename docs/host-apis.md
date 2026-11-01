@@ -1,6 +1,6 @@
 # Coopanion/Cortico：一个 World 能用的运行时能力
 
-面向下一个接手「自主发言」插件的开发者。结论全部来自真实源码；引用路径相对源码根
+面向下一个接手「作息」（rhythm）插件的开发者。结论全部来自真实源码；引用路径相对源码根
 `C:\Users\Administrator\AppData\Local\Programs\Coopanion\resources\app\build\cortico\src\`，格式 `文件:行号`。
 
 先记住一句话：**World 只拿得到 `WorldHost`（`core/types.ts:679-741`）和 `WorldContext`
@@ -48,7 +48,7 @@ pushEvent(
 ```ts
 // 自录一条已发出的发言：只留档，不把自己吵醒
 await host.pushEvent({
-  type: 'selftalk.spoke', ts: nowIso(ctx.timezone), source: this.id,
+  type: 'rhythm.spoke', ts: nowIso(ctx.timezone), source: this.id,
   text: `[${shortTime(ctx.timezone)}] 我说：${body}`,
   senderKey: 'self',          // 稳定过滤键，store.range/grep 可按它筛
   meta: { body },             // 私有数据，不进上下文
@@ -78,7 +78,7 @@ pushDeferred(
 至少一条否则抛错（`core/core.ts:542-550`）。`project` 在**投递时**按「同 source + 同 origin + 同函数」
 分组整批调一次（`core/types.ts:113-116`、`core/loop.ts:750-762`），生成的正文排在当前批即时事件**之后**
 （`core/loop.ts:653-666`）；`candidateIndexes` 越界/重复 ⇒ 整条投影跳过并 warn（`core/loop.ts:770-777`）。
-用途是把一堆平台消息合成一句「他们在聊 X」；自主发言插件通常用不到。
+用途是把一堆平台消息合成一句「他们在聊 X」；作息插件通常用不到。
 
 ### 1.4 `TriggerMode` 的真实差别
 
@@ -236,8 +236,8 @@ label?; lamps?; badges?; panels?; invoke?; stream?; promptDocs?; storage?; links
 
 ```ts
 const GROUP: ConfigGroup = {
-  id: 'selftalk', owner: `world:${ID}`,
-  schema: { type: 'object', title: '自主发言', properties: {
+  id: 'rhythm', owner: `world:${ID}`,
+  schema: { type: 'object', title: '作息', properties: {
     [`worlds.${ID}.quietGapMs`]: { type: 'integer', title: '安静多久后开口', minimum: 1000, 'x-hot': true },
     [`worlds.${ID}.wakeAt`]:    { type: 'string',  title: '下次叫醒时刻(ISO)', 'x-hot': true },
   } },
@@ -332,7 +332,7 @@ World 收不到自己或别人的生命周期事件。
 12. **`onRunPhase` 在主循环调用栈上**，只许记状态（`core/types.ts:942-946`）；**`cfg.enabled` 不是你
     的开关**，`persist({enabled:...})` 等于请求重启自己（`world.ts:48-49`）。
 
-## 14. 对自主发言插件的可用扩展点
+## 14. 对作息（rhythm）插件的可用扩展点
 
 | 能力 | 用途 | 引用 |
 |---|---|---|

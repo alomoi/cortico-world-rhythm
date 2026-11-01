@@ -1,7 +1,7 @@
 /**
- * 自言自语 World 的配置段与 WebUI 配置组。
+ * 作息（Rhythm）World 的配置段与 WebUI 配置组。
  *
- * `worlds.selftalk` 是组装层给出的活引用：WebUI 在「模块」页改值时就地写进这个对象，
+ * `worlds.rhythm` 是组装层给出的活引用：WebUI 在「模块」页改值时就地写进这个对象，
  * World 每个检查周期现读，所以改完立即生效，不需要重启。
  */
 import type { ConfigGroup } from 'cortico/core/config-schema.ts';
@@ -10,9 +10,9 @@ import type { WorldSection } from 'cortico/world.ts';
 import { uiText } from './ui-text.ts';
 
 /** World id。内置 World 是 console / desktop-pet / coopanion，扩展 World 用不冲突的名字。 */
-export const SELFTALK_ID = 'selftalk';
+export const RHYTHM_ID = 'rhythm';
 
-export interface SelfTalkConfigSection extends WorldSection {
+export interface RhythmConfigSection extends WorldSection {
   /** 安静多少分钟后第一次叫醒 Coo；0 关闭计时（世界保持挂载但不再叫醒）。 */
   quietMinutes: number;
   /** 一次叫醒之后，若还是没人说话，隔多久再叫醒一次。 */
@@ -24,7 +24,7 @@ export interface SelfTalkConfigSection extends WorldSection {
 }
 
 /** 各键的缺省值；enabled 恒为 false，是否启用由 bot 声明与部署配置决定。 */
-export const SELFTALK_DEFAULTS: SelfTalkConfigSection = {
+export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   enabled: false,
   quietMinutes: 15,
   repeatMinutes: 25,
@@ -32,10 +32,10 @@ export const SELFTALK_DEFAULTS: SelfTalkConfigSection = {
   jitter: 0.2,
 };
 
-/** 配置组：出现在自言自语 World 页，改值立即生效（检查周期里现读）。 */
-export function selftalkConfigGroup(language: Language): ConfigGroup {
+/** 配置组：出现在作息 World 页，改值立即生效（检查周期里现读）。 */
+export function rhythmConfigGroup(language: Language): ConfigGroup {
   const t = uiText(language);
-  const owner = `world:${SELFTALK_ID}` as const;
+  const owner = `world:${RHYTHM_ID}` as const;
   return {
     id: owner,
     owner,
@@ -44,7 +44,7 @@ export function selftalkConfigGroup(language: Language): ConfigGroup {
       title: t.configTitle,
       description: t.configDescription,
       properties: {
-        [`worlds.${SELFTALK_ID}.quietMinutes`]: {
+        [`worlds.${RHYTHM_ID}.quietMinutes`]: {
           type: 'integer',
           title: t.quietTitle,
           description: t.quietDescription,
@@ -52,7 +52,7 @@ export function selftalkConfigGroup(language: Language): ConfigGroup {
           maximum: 720,
           'x-hot': true,
         },
-        [`worlds.${SELFTALK_ID}.repeatMinutes`]: {
+        [`worlds.${RHYTHM_ID}.repeatMinutes`]: {
           type: 'integer',
           title: t.repeatTitle,
           description: t.repeatDescription,
@@ -60,14 +60,14 @@ export function selftalkConfigGroup(language: Language): ConfigGroup {
           maximum: 720,
           'x-hot': true,
         },
-        [`worlds.${SELFTALK_ID}.maxRounds`]: {
+        [`worlds.${RHYTHM_ID}.maxRounds`]: {
           type: 'integer',
           title: t.maxRoundsTitle,
           description: t.maxRoundsDescription,
           minimum: 0,
           'x-hot': true,
         },
-        [`worlds.${SELFTALK_ID}.jitter`]: {
+        [`worlds.${RHYTHM_ID}.jitter`]: {
           type: 'number',
           title: t.jitterTitle,
           description: t.jitterDescription,

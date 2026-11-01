@@ -3,6 +3,9 @@
  *
  * 语言跟 Coopanion 的模型文本语言走：应用语言是 zh / zh-Hant 用中文，其余用英文。
  * 应用语言从部署目录的 config.json 现读；读不到时按中文。
+ *
+ * 正文落到上下文里是 user 消息中的一行（internal 投递，不进 system 前缀），
+ * 所以带上 [时刻][作息] 标记，让 Coo 一眼看出这是机制在说话，不是对方发言。
  */
 import { readFileSync } from 'node:fs';
 
@@ -41,9 +44,9 @@ export interface NudgeLine {
  */
 export const NUDGE_TEXT: Record<ModelLanguage, (line: NudgeLine) => string> = {
   zh: (line) => line.again
-    ? `[${line.at}] [自主发言] 又安静了大约 ${line.quietMinutes} 分钟，还是没有人来。想接着刚才的话说下去、自己做点事，或者跟自己聊两句都可以；不想就结束这一轮。`
-    : `[${line.at}] [自主发言] 安静了大约 ${line.quietMinutes} 分钟，没有人跟你说话。现在你可以自己决定:想说话就在气泡里跟对方说点什么，想做事就用工具，自己跟自己说几句也可以；不想就结束这一轮。`,
+    ? `[${line.at}] [作息] 又安静了大约 ${line.quietMinutes} 分钟，还是没有人来。想接着刚才的话说下去、自己做点事，或者跟自己聊两句都可以；不想就结束这一轮。`
+    : `[${line.at}] [作息] 安静了大约 ${line.quietMinutes} 分钟，没有人跟你说话。现在你可以自己决定:想说话就在气泡里跟对方说点什么，想做事就用工具，自己跟自己说几句也可以；不想就结束这一轮。`,
   en: (line) => line.again
-    ? `[${line.at}] [self-talk] Another ${line.quietMinutes} quiet minutes have passed and nobody has come. You can carry on from where you were, do something on your own, or just talk to yourself a little; if you would rather not, end this turn.`
-    : `[${line.at}] [self-talk] It has been quiet for about ${line.quietMinutes} minutes; nobody is talking to you. It is your call: say something to the person in your bubble, do something with your tools, or just talk to yourself a little; if you have nothing to say, end this turn.`,
+    ? `[${line.at}] [rhythm] Another ${line.quietMinutes} quiet minutes have passed and nobody has come. You can carry on from where you were, do something on your own, or just talk to yourself a little; if you would rather not, end this turn.`
+    : `[${line.at}] [rhythm] It has been quiet for about ${line.quietMinutes} minutes; nobody is talking to you. It is your call: say something to the person in your bubble, do something with your tools, or just talk to yourself a little; if you have nothing to say, end this turn.`,
 };

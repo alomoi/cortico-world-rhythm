@@ -12,6 +12,10 @@
 > | `[PNPM]` | `[EXT].pnpm\` |
 >
 > 脱敏：本笔记不含任何 token / 密钥 / 完整用户 id；`[DEP].env` 里只有一项搜索 API key，未抄录。
+>
+> **注意**：本文调研的是**本机已装的上游插件** `cortico-world-selftalk@0.2.2`（World id `selftalk`，
+> 显示名「自主发言」）。本 fork 已改名为 `cortico-world-rhythm` / id `rhythm` / 显示名「作息」，
+> 代码逻辑目前仍是同一份；文中凡写 `selftalk` 的地方，换成 `rhythm` 即对应当前 fork。
 
 ---
 
