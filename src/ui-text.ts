@@ -55,6 +55,8 @@ export interface RhythmUi {
   wakeHintDescription: string;
   wakeGapTitle: string;
   wakeGapDescription: string;
+  wakeHintSecondsTitle: string;
+  wakeHintSecondsDescription: string;
   knownChannelsTitle: string;
   knownChannelsDescription: string;
   activityIgnoreTitle: string;
@@ -101,6 +103,8 @@ const zh: RhythmUi = {
   wakeHintDescription: '睡眠时段里有人来找 Coo 时，搭着这一轮给它一句「你被吵醒了」，由它自己决定要不要有点起床气。超过 90 秒没搭上车就作废，不会事后突然冒出来。',
   wakeGapTitle: '同一场打扰的合并间隔',
   wakeGapDescription: '这几分钟内连续来的消息只算一次「被吵醒」；超过它再来人才算又一次。缺省 30 分钟。',
+  wakeHintSecondsTitle: '「被吵醒」提示的保鲜期（秒）',
+  wakeHintSecondsDescription: '这条提示只在这么多秒内能搭上正在进行的那一轮；超过就作废，不会在对话结束后突然冒出来。缺省 90 秒。',
   knownChannelsTitle: '只把桌宠和控制台当成有人',
   knownChannelsDescription: '打开后只认桌宠与控制台的旧事件清单（旧版本行为），微信、QQ 等其他渠道的消息不算“有人回来了”。默认关闭：任何渠道的人侧事件都算。',
   activityIgnoreTitle: '不算“有人回来了”的事件类型',
@@ -161,6 +165,8 @@ const en: RhythmUi = {
   wakeHintDescription: 'When someone talks to it during the sleep window, a "you were woken up" line rides along with that turn; being grumpy is its own call. Dropped if it cannot join within 90 seconds, so it never shows up late.',
   wakeGapTitle: 'Merge window for one interruption',
   wakeGapDescription: 'Messages inside this many minutes count as one wake-up; a new one starts after that. 30 minutes by default.',
+  wakeHintSecondsTitle: 'How long the "you were woken" hint stays fresh (s)',
+  wakeHintSecondsDescription: 'It can only join a turn that starts within this many seconds; after that it is dropped, so it never shows up once the conversation is over. 90 seconds by default.',
   knownChannelsTitle: 'Only the pet and console count as a person',
   knownChannelsDescription: 'Uses the old whitelist: only desktop-pet and console events count as "somebody came back". Messages from WeChat, QQ and other channels are ignored. Off by default: person-side events from every channel count.',
   activityIgnoreTitle: 'Event types that are not "somebody came back"',

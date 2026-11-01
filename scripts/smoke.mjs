@@ -150,6 +150,7 @@ console.log('config defaults:');
   check('sleepHint defaults on', d.sleepHint === true);
   check('wakeHint defaults on', d.wakeHint === true);
   check('wakeGapMinutes defaults to 30', d.wakeGapMinutes === 30);
+  check('wakeHintSeconds defaults to 90', d.wakeHintSeconds === 90);
 }
 
 // ── 1. 安静计时与第一次叫醒 ────────────────────────────────────────────────
@@ -892,6 +893,18 @@ console.log('the woken hint expires:');
   check('its text names the source', String(hint.spec.render()).includes('qq.message'));
   advance(2);
   check('the woken hint is dropped after 90 seconds', hint.spec.render() === null);
+
+  const short = harness({ sleepWindow: '22:00-08:00', wakeHintSeconds: 10 });
+  await boot(short);
+  short.world.tick();
+  advance(1);
+  addEvent(short, 'qq.message');
+  short.world.tick();
+  const quick = short.hints.find((x) => x.spec.meta.kind === 'woken');
+  check('a custom freshness window applies', typeof quick.spec.render() === 'string');
+  advance(1);
+  check('and expires after that many seconds', quick.spec.render() === null);
+  await short.world.stop();
   await h.world.stop();
 }
 

@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 ## 0.3.0（本地 fork，未发布）
 
@@ -57,7 +57,7 @@
 - **「被吵醒」计数**（`wakeGapMinutes`，缺省 30）：睡眠时段内的人侧事件按间隔合并计一次；
   internal 与 `*.self`（软件唤醒、Coo 自己的动作）天然不计，灰区用 `activityIgnore` 排除。
   每计一次推一条归档事件 `rhythm.woke`（`deliver: false`）。
-- **兜底提示**（`wakeHint`，缺省开）：`piggyback` 只搭着正在进行的那一轮，90 秒内没搭上车就作废，
+- **兜底提示**（`wakeHint`，缺省开）：`piggyback` 只搭着正在进行的那一轮，`wakeHintSeconds`（缺省 90，可调 10–300）内没搭上车就作废，
   不会在对话结束后突然冒出「你被吵醒了」。
 - **公开状态**：`<dataDir>/rhythm/status.json`（`sleep.active/endsAt/wokeCount/lastWokeAt/lastWokeBy`、
   `today.nudges/cap`），原子写，供其他插件读取；不含敏感字段。

@@ -203,12 +203,12 @@ $env:ELECTRON_RUN_AS_NODE = '1'
    判定与「有人回来了」完全同一套（internal 与 `*.self` 天然不计，灰区用 `activityIgnore`）。
    每计一次推一条归档事件 `rhythm.woke`（`deliver:false`）。
 4. **兜底提示**（`wakeHint`，缺省开）：`piggyback` 投递，只搭着正在进行的这一轮走；
-   `render()` 里超过 90 秒返回 `null`——不会在对话结束很久后突然冒出「你被吵醒了」。
+   `render()` 里超过 `wakeHintSeconds`（缺省 90，可调 10–300）返回 `null`——不会在对话结束很久后突然冒出「你被吵醒了」。
    为什么不用 flush：见 `p2-sleep-design.md` §3（会多一次模型调用且可能迟到）。
 5. **公开状态**（`status.json`）：`sleep.active/endsAt/wokeCount/lastWokeAt/lastWokeBy`、
    `today.nudges/cap`，原子写；供微信桥等插件读取，不含敏感字段。
 
-**本地验证**：`smoke.mjs` 159 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
+**本地验证**：`smoke.mjs` 162 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
 睡眠阻断与重新计时、排队作废、每日上限、退避时间表、概率跳过、重启续算、坏文件、
 **两条睡眠提示、重启不重发、被吵醒合并计数（30 分钟）、内部/自录不计、piggyback 与 90 秒过期、
 自定义文案、status.json 内容**。

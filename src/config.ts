@@ -41,6 +41,8 @@ export interface RhythmConfigSection extends WorldSection {
   wakeHint: boolean;
   /** 同一场打扰的合并间隔：超过它再有人来才算「又被吵醒一次」。 */
   wakeGapMinutes: number;
+  /** 「被吵醒」提示的保鲜期（秒）：超过它就作废，不事后补发。 */
+  wakeHintSeconds: number;
   /**
    * 只用桌宠与控制台的旧白名单判断「有人回来了」。
    * false（缺省）= 任何渠道的人侧事件都算：微信、QQ、B 站、Discord 等扩展都自动生效。
@@ -69,6 +71,7 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   sleepHint: true,
   wakeHint: true,
   wakeGapMinutes: 30,
+  wakeHintSeconds: 90,
   knownChannelsOnly: false,
   activityIgnore: '',
   onlyWhenIdle: true,
@@ -179,6 +182,14 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           description: t.wakeGapDescription,
           minimum: 1,
           maximum: 240,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.wakeHintSeconds`]: {
+          type: 'integer',
+          title: t.wakeHintSecondsTitle,
+          description: t.wakeHintSecondsDescription,
+          minimum: 10,
+          maximum: 300,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.knownChannelsOnly`]: {

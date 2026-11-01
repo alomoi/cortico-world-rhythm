@@ -60,8 +60,8 @@ const SCAN_LIMIT = 500;
 /** Coo 自己的自录事件都以 `.self` 结尾（desktop-pet.self / console.self），不算有人回来。 */
 const SELF_SUFFIX = '.self';
 
-/** 「被吵醒」提示的保鲜期：超过它就作废，避免对话结束很久后突然冒出起床气。 */
-const WAKE_HINT_STALE_MS = 90_000;
+/** 「被吵醒」提示的保鲜期由配置给（`wakeHintSeconds`，缺省 90 秒），超过就作废。 */
+const DEFAULT_WAKE_HINT_SECONDS = 90;
 
 /**
  * 旧白名单：`knownChannelsOnly` 打开时只认这些。
@@ -107,6 +107,7 @@ interface Limits {
   sleepHint: boolean;
   wakeHint: boolean;
   wakeGapMinutes: number;
+  wakeHintSeconds: number;
   knownChannelsOnly: boolean;
   onlyWhenIdle: boolean;
 }
@@ -297,6 +298,7 @@ export class RhythmWorld implements World {
       sleepHint: cfg.sleepHint !== false,
       wakeHint: cfg.wakeHint !== false,
       wakeGapMinutes: Math.floor(numberIn(cfg.wakeGapMinutes, 30, 1, 240)),
+      wakeHintSeconds: Math.floor(numberIn(cfg.wakeHintSeconds, DEFAULT_WAKE_HINT_SECONDS, 10, 300)),
       knownChannelsOnly: cfg.knownChannelsOnly === true,
       onlyWhenIdle: cfg.onlyWhenIdle !== false,
     };
@@ -634,12 +636,14 @@ export class RhythmWorld implements World {
   private sendHint(kind: HintKind, now: number, vars: { by?: string; count?: number } = {}): void {
     const host = this.host;
     if (!host) return;
+    const limits = this.limits();
     const template = this.readMessages()[this.opts.language()][kind];
     const text = fillTemplate(template, {
       at: shortTime(this.opts.timezone, new Date(now)),
       by: vars.by ?? '',
       count: vars.count === undefined ? '' : String(vars.count),
     });
+    const staleAfterMs = limits.wakeHintSeconds * 1000;
     host.log.info('作息:睡眠提示', { kind, phase: this.phaseState });
     host.pushDeferred({
       type: HINT_TYPE,
@@ -647,7 +651,7 @@ export class RhythmWorld implements World {
       senderKey: HINT_TYPE,
       meta: { kind },
       render: () => {
-        if (kind === 'woken' && Date.now() - now > WAKE_HINT_STALE_MS) return null;
+        if (kind === 'woken' && Date.now() - now > staleAfterMs) return null;
         return text;
       },
     }, { trigger: kind === 'woken' ? 'piggyback' : 'flush' });

@@ -6,7 +6,8 @@
 > - 本 fork 改名：包名 `cortico-world-rhythm`、World id **`rhythm`**、显示名「作息」。
 >   目标不再是"安静后叫醒一次"，而是**让桌宠有自己的生活节律**（作息），后续功能见计划文档。
 > - 版本：`0.3.0`；`private: true`（不发布 npm；要发布先摘掉这个字段）。
-> - 开发手册见 [`docs/dev-notes.md`](docs/dev-notes.md)，改进计划见 [`docs/fork-plan.md`](docs/fork-plan.md)。
+> - 开发手册见 [`docs/dev-notes.md`](docs/dev-notes.md)，改进计划见 [`docs/fork-plan.md`](docs/fork-plan.md)，
+>   交接记录见 [`docs/handoff.md`](docs/handoff.md)（这个项目由大肥鱼开始，也一直由大肥鱼维护）。
 > - 本地验证（不需要启动 Coopanion）：
 >
 >   ```powershell
@@ -66,6 +67,7 @@
 | `sleepHint` | true | 睡眠时段开始/结束时给 Coo 各一条「该睡了 / 该醒了」的提示 |
 | `wakeHint` | true | 睡眠中被吵醒时，搭着这一轮给它一句「你被吵醒了」（超过 90 秒作废） |
 | `wakeGapMinutes` | 30 | 同一场打扰的合并间隔；超过它再来人才算「又被吵醒一次」 |
+| `wakeHintSeconds` | 90 | 「被吵醒」提示的保鲜期（10–300 秒）；超过就作废，不事后补发 |
 | `dailyCap` | 12 | 一天（部署时区）最多主动叫醒几次；0 = 不限 |
 | `backoffAfter` | 0 | 连续几次没人理后开始拉长间隔；0 = 关闭退避 |
 | `backoffFactor` | 1.5 | 每多一次没人回应，间隔乘多少（1.0–3.0） |
