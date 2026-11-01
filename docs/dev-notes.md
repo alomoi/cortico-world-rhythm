@@ -110,6 +110,9 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 | 时间参数 | `src/world.ts:120-129` | `quietMinutes` 0–720、`repeatMinutes` 1–720、`maxRounds` 0=不限、`jitter` 0–0.5 |
 | 安静判定 | `src/world.ts:153-175` | 首次：`lastActivitySeen + quiet × jitter`；再次：`lastNudgeAt + repeat × jitter` |
 | 叫醒投递 | `src/world.ts:177-198` | `pushDeferred(..., { trigger: 'flush' })`，`origin: 'internal'` |
+| 投递位置 | `core/loop.ts:706-712` | internal 正文拼进同一条 user 消息的正文行，**不进 system 前缀** |
+| 投递时机 | `core/bus.ts:107-110` | `flush` 不打断正在跑的回合，等轮边界（工具全返回或下一次请求前） |
+| 渲染期限 | `core/loop.ts:243`、`846-855` | `render()` 超过 3 秒、抛错或返回 `null` 都等于这条事件不存在 |
 | 排队作废 | `src/world.ts:190-193` | `render()` 时若期间有新人侧事件 → 返回 `null`，这条不投递 |
 | 叫醒正文 | `src/model-text.ts` | 中文/英文两版，开头带 `HH:MM`；语言读部署 `config.json` 的 `language` |
 | WebUI | `src/ui-text.ts`、`src/config.ts` | 一个状态灯 + 一个配置组；没有自定义面板 |
@@ -139,6 +142,8 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 6. **`maxRounds` 每段安静重置**，但一段安静可以无限长（没人说话时 0=不限），夜里会一直叫。
 7. **语言文件每次叫醒都读盘**（`model-text.ts` 的 `readFileSync`），可忽略，但改成启动时读一次更干净。
 8. **订阅窗口硬编码 500 条**，长会话里人侧事件多时扫描成本与正确性都值得复核。
+9. **World 被隐藏时叫醒会静默消失**：`pushDeferred` 对隐藏 World 直接丢弃（`core/core.ts:511-527`、`533-534`），
+   日志里也看不出「被丢掉」。改的时候要能把这两种情况分开。
 
 ---
 
