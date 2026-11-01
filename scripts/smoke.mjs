@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * 行为冒烟测试：不需要 Coopanion，用假宿主与假时钟驱动 World 的计时逻辑。
  *
@@ -855,11 +855,20 @@ console.log('counting wake-ups:');
   h.world.tick();
   check('more messages in the same burst do not count again', h.world.state.sleep.wokeCount === 1);
 
-  advance(25); // 累计 35 分钟
+  advance(31); // 两次说话之间真的安静了 30 分钟以上
   addEvent(h, 'desktop-pet.message');
   h.world.tick();
-  check('a new burst counts again', h.world.state.sleep.wokeCount === 2);
+  check('a new burst after real silence counts again', h.world.state.sleep.wokeCount === 2);
   check('the source of the last wake-up is recorded', h.world.state.sleep.lastWokeBy === 'desktop-pet.message');
+
+  // 一直聊着，即使距上次「计数」超过 30 分钟也不能再记一次
+  advance(5);
+  addEvent(h, 'clawbridge.message');
+  h.world.tick();
+  advance(5);
+  addEvent(h, 'clawbridge.message');
+  h.world.tick();
+  check('a continuous chat never counts twice', h.world.state.sleep.wokeCount === 2);
 
   advance(60);
   addEvent(h, 'coopanion.alarm', { origin: 'internal' });

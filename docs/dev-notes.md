@@ -1,4 +1,4 @@
-# 作息（rhythm）fork · 开发笔记
+﻿# 作息（rhythm）fork · 开发笔记
 
 > 这份文件只写**本地开发环境与这个 fork 的工作方式**。功能设计见 `fork-plan.md`，
 > 宿主 API 详见 `host-apis.md`，Coo 现有能力详见 `coo-capabilities.md`。
@@ -208,7 +208,7 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 5. **公开状态**（`status.json`）：`sleep.active/endsAt/wokeCount/lastWokeAt/lastWokeBy`、
    `today.nudges/cap`，原子写；供微信桥等插件读取，不含敏感字段。
 
-**本地验证**：`smoke.mjs` 158 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
+**本地验证**：`smoke.mjs` 159 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
 睡眠阻断与重新计时、排队作废、每日上限、退避时间表、概率跳过、重启续算、坏文件、
 **两条睡眠提示、重启不重发、被吵醒合并计数（30 分钟）、内部/自录不计、piggyback 与 90 秒过期、
 自定义文案、status.json 内容**。

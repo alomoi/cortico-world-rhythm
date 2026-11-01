@@ -568,12 +568,16 @@ export class RhythmWorld implements World {
     if (!host) return;
     const latest = this.latestPersonActivity();
     if (latest.at === 0) return;
-    if (latest.at > this.lastActivitySeen) this.lastActivitySeen = latest.at;
+    // 上一条人侧事件的时刻（更新前）；用来判断「两次说话之间是不是真的安静了」。
+    const previous = this.lastActivitySeen;
+    if (latest.at > previous) this.lastActivitySeen = latest.at;
     if (!latest.type) return;
 
     const gapMs = limits.wakeGapMinutes * 60_000;
     const countedAt = this.state.sleep.lastCountedAt ? Date.parse(this.state.sleep.lastCountedAt) : 0;
-    if (latest.at - countedAt < gapMs) return;
+    // 第一场打扰一定算；之后只有「上一次说话已经是 gap 分钟以前」才算新的一次。
+    // 用 previous 而不是 countedAt：连续聊天时上一条就在几分钟前，不会凑满 30 分钟又记一次。
+    if (countedAt > 0 && latest.at - previous < gapMs) return;
 
     this.state.sleep.wokeCount += 1;
     this.state.sleep.lastWokeAt = new Date(latest.at).toISOString();
