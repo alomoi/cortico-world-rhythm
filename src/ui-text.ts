@@ -4,6 +4,19 @@
  */
 import type { Language } from 'cortico/core/language.ts';
 
+/** 状态灯要显示的事实；由 World 现算，文案在这里按语言渲染。 */
+export interface LampInfo {
+  /** 0 = 计时关闭。 */
+  quietMinutes: number;
+  /** 0 = 不限。 */
+  maxRounds: number;
+  nudgesToday: number;
+  /** 距下次叫醒还有几分钟（向上取整）；本轮已到上限时为 null。 */
+  nextInMinutes: number | null;
+  /** 这一段安静里叫醒次数已达上限。 */
+  capped: boolean;
+}
+
 export interface RhythmUi {
   label: string;
   configTitle: string;
@@ -16,10 +29,20 @@ export interface RhythmUi {
   maxRoundsDescription: string;
   jitterTitle: string;
   jitterDescription: string;
+  knownChannelsTitle: string;
+  knownChannelsDescription: string;
+  activityIgnoreTitle: string;
+  activityIgnoreDescription: string;
+  onlyWhenIdleTitle: string;
+  onlyWhenIdleDescription: string;
+  /** 状态灯的名字（悬停标题）。 */
   lampLabel: string;
-  /** 状态灯悬停说明：每安静 q 分钟叫醒一次，最多 m 次。 */
-  lampHint: (quietMinutes: number, maxRounds: number) => string;
+  /** 状态灯悬停说明。 */
+  lampHint: (info: LampInfo) => string;
+  /** 计时关闭时的悬停说明。 */
   lampOff: string;
+  /** 徽标名：今日叫醒次数。 */
+  badgeToday: string;
 }
 
 const zh: RhythmUi = {
@@ -34,11 +57,25 @@ const zh: RhythmUi = {
   maxRoundsDescription: '对方一直不说话时，一段安静里最多叫醒几次；0 表示不限；对方一说话就重新计数。',
   jitterTitle: '间隔浮动',
   jitterDescription: '让每个等待间隔都不那么固定：每个间隔在基准的 1–(1+浮动) 倍之间随机。',
+  knownChannelsTitle: '只把桌宠和控制台当成有人',
+  knownChannelsDescription: '打开后只认桌宠与控制台的旧事件清单（旧版本行为），微信、QQ 等其他渠道的消息不算“有人回来了”。默认关闭：任何渠道的人侧事件都算。',
+  activityIgnoreTitle: '不算“有人回来了”的事件类型',
+  activityIgnoreDescription: '逗号分隔，可写多个；以 * 结尾表示前缀匹配（例如 qq.system*）。一般留空即可。',
+  onlyWhenIdleTitle: '只在 Coo 空闲时叫醒',
+  onlyWhenIdleDescription: '它正在跑模型或执行工具时先不叫醒，等这一轮结束。默认打开，避免打断它手上的事。',
   lampLabel: '叫醒计时',
-  lampHint: (quietMinutes, maxRounds) => maxRounds > 0
-    ? `在线：每安静满 ${quietMinutes} 分钟叫醒 Coo 一次，最多 ${maxRounds} 次。`
-    : `在线：每安静满 ${quietMinutes} 分钟叫醒 Coo 一次，不设次数上限。`,
+  lampHint: (info) => {
+    if (info.capped) {
+      return `在线：本轮已叫醒 ${info.maxRounds} 次，等有人说话后重新计时（今日 ${info.nudgesToday} 次）。`;
+    }
+    if (info.nextInMinutes !== null) {
+      const cap = info.maxRounds > 0 ? `，本轮上限 ${info.maxRounds} 次` : '';
+      return `在线：约 ${info.nextInMinutes} 分钟后叫醒 Coo${cap}（今日 ${info.nudgesToday} 次）。`;
+    }
+    return `在线：等安静满 ${info.quietMinutes} 分钟再叫醒（今日 ${info.nudgesToday} 次）。`;
+  },
   lampOff: '在线：安静计时已关闭。',
+  badgeToday: '今日叫醒',
 };
 
 const en: RhythmUi = {
@@ -53,9 +90,25 @@ const en: RhythmUi = {
   maxRoundsDescription: 'Wake-ups per quiet stretch; 0 means no limit; talking to the bot starts the count over.',
   jitterTitle: 'Interval jitter',
   jitterDescription: 'Every waiting interval is drawn between 1 and 1+jitter times its base, so the rhythm is never mechanical.',
+  knownChannelsTitle: 'Only the pet and console count as a person',
+  knownChannelsDescription: 'Uses the old whitelist: only desktop-pet and console events count as "somebody came back". Messages from WeChat, QQ and other channels are ignored. Off by default: person-side events from every channel count.',
+  activityIgnoreTitle: 'Event types that are not "somebody came back"',
+  activityIgnoreDescription: 'Comma-separated; a trailing * matches a prefix (e.g. qq.system*). Usually leave empty.',
+  onlyWhenIdleTitle: 'Only wake the bot while it is idle',
+  onlyWhenIdleDescription: 'Skips the wake-up while the model or a tool is running, and waits for the turn to end. On by default so it never interrupts itself.',
   lampLabel: 'Wake timer',
-  lampHint: (quietMinutes, maxRounds) => `Online: woken once every ${quietMinutes} quiet minutes, ${maxRounds > 0 ? `at most ${maxRounds} times` : 'without limit'}.`,
+  lampHint: (info) => {
+    if (info.capped) {
+      return `Online: ${info.maxRounds} wake-ups this stretch; the clock restarts when someone speaks (${info.nudgesToday} today).`;
+    }
+    if (info.nextInMinutes !== null) {
+      const cap = info.maxRounds > 0 ? `, at most ${info.maxRounds} this stretch` : '';
+      return `Online: next wake-up in about ${info.nextInMinutes} min${cap} (${info.nudgesToday} today).`;
+    }
+    return `Online: waiting for ${info.quietMinutes} quiet minutes (${info.nudgesToday} today).`;
+  },
   lampOff: 'Online: the quiet timer is off.',
+  badgeToday: 'Wakes today',
 };
 
 /** 界面文案语言：zh 与 zh-Hant 用中文，其余（含未指明）用英文，与 Coopanion 的界面语言取法一致。 */

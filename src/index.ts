@@ -36,6 +36,7 @@ const definition: WorldDefinition<RhythmConfigSection> = {
   create: (ctx) => new RhythmWorld({
     cfg: ctx.cfg,
     timezone: ctx.timezone,
+    dataDir: ctx.dataDir,
     language: () => modelLanguageOfConfigFile(join(ctx.botDir, 'config.json')),
   }),
   describe: DESCRIBE,

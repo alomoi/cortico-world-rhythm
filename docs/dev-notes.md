@@ -1,4 +1,4 @@
-# 作息（rhythm）fork · 开发笔记
+﻿# 作息（rhythm）fork · 开发笔记
 
 > 这份文件只写**本地开发环境与这个 fork 的工作方式**。功能设计见 `fork-plan.md`，
 > 宿主 API 详见 `host-apis.md`，Coo 现有能力详见 `coo-capabilities.md`。
@@ -110,23 +110,26 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 
 ---
 
-## 4. 当前行为（逻辑仍是 0.2.2 基线，只改了名字）
+## 4. 当前行为（0.3.0 P0 之后）
 
 | 行为 | 代码位置 | 说明 |
 |---|---|---|
-| 检查周期 5 秒 | `src/world.ts:26` | `setInterval(() => this.tick(), 5000)` |
-| 事件扫描窗口 500 条 | `src/world.ts:29` | `store.range({ limit: 500 })`，找最近的使用者动作 |
-| 「使用者动作」白名单 | `src/world.ts:39-48` | 只有 `desktop-pet.*`（message/speech/answer/touch/figure）与 `console.*`（message/invite） |
-| 时间参数 | `src/world.ts:124-133` | `quietMinutes` 0–720、`repeatMinutes` 1–720、`maxRounds` 0=不限、`jitter` 0–0.5 |
-| 安静判定 | `src/world.ts:157-179` | 首次：`lastActivitySeen + quiet × jitter`；再次：`lastNudgeAt + repeat × jitter` |
-| 叫醒投递 | `src/world.ts:181-202` | `pushDeferred(..., { trigger: 'flush' })`，`origin: 'internal'` |
+| 检查周期 5 秒 | `src/world.ts:34` | `setInterval(() => this.tick(), 5000)` |
+| 事件扫描窗口 500 条 | `src/world.ts:37` | `store.range({ limit: 500, origin: 'external' })`，只扫外部事件 |
+| 「有人回来了」判定 | `src/world.ts:262-268` | external + 类型不以 `.self` 结尾 + 不在 `activityIgnore` 里；`knownChannelsOnly` 打开才退回旧白名单（`world.ts:46`） |
+| 主循环忙不叫醒 | `src/world.ts:199-201`、`302` | `onRunPhase` 只记 phase；`onlyWhenIdle` 时 phase ≠ idle 直接跳过 |
+| 时间参数 | `src/world.ts:214-224` | `quietMinutes` / `repeatMinutes` / `maxRounds` / `jitter`，外加 P0 的三个开关 |
+| 安静判定 | `src/world.ts:291-331` | 首次：`lastActivitySeen + quiet × jitter`；再次：`lastNudgeAt + repeat × jitter` |
+| 叫醒投递 | `src/world.ts:334-366` | `pushDeferred(..., { trigger: 'flush' })`，`origin: 'internal'` |
+| 状态落盘 | `src/state.ts`、`src/world.ts:370-382` | `<dataDir>/rhythm/state.json`：今日次数、本轮轮次、上次叫醒与结果；重启续算 |
+| 投递结果 | `src/world.ts:204-212` | `onEventsSettled` 记 delivered/discarded；discarded 时今日计数回退 |
 | 投递位置 | `core/loop.ts:706-712` | internal 正文拼进同一条 user 消息的正文行，**不进 system 前缀** |
 | 投递时机 | `core/bus.ts:107-110` | `flush` 不打断正在跑的回合，等轮边界（工具全返回或下一次请求前） |
 | 渲染期限 | `core/loop.ts:243`、`846-855` | `render()` 超过 3 秒、抛错或返回 `null` 都等于这条事件不存在 |
-| 排队作废 | `src/world.ts:194-199` | `render()` 时若期间有新人侧事件 → 返回 `null`，这条不投递 |
+| 排队作废 | `src/world.ts:352-358` | `render()` 时若期间有新人侧事件 → 返回 `null`，这条不投递 |
+| 状态灯/徽标 | `src/world.ts:112-135`、`src/ui-text.ts` | 灯里给「约 X 分钟后叫醒 / 今日 N 次 / 本轮已到上限」；徽标给今日次数 |
 | 叫醒正文 | `src/model-text.ts` | 中文/英文两版，开头带 `HH:MM`；语言读部署 `config.json` 的 `language` |
-| WebUI | `src/ui-text.ts`、`src/config.ts` | 一个状态灯 + 一个配置组；没有自定义面板 |
-| 工具 | `src/index.ts`、`world.ts:104` | 没有工具（`tools(): []`） |
+| 工具 | `src/index.ts`、`world.ts:139` | 没有工具（`tools(): []`） |
 
 **叫醒事件正文（首次）**：
 
@@ -136,24 +139,38 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 
 ---
 
-## 5. 基线里明确存在的问题（改进候选，按优先级）
+## 5. 问题清单与 P0 处理结果
 
-1. **只认两个渠道的人侧事件**：`ACTIVITY_TYPES` 硬编码 `desktop-pet.*` 与 `console.*`。
-   微信桥推的是 `clawbridge.message`（`clawbridge/plugin/src/config.js:19`、`world.js:1019`），
-   不在白名单里 → 用户在微信里聊天**不会**重置安静计时，插件会在人家正聊得热闹时插嘴。
-   本机 `clawbridge` 与上游 `selftalk` 都已启用，这是真机问题（本 fork 沿用同一份白名单，问题一并继承）。
-   → 应改成「任何非 self 的外部事件」或可配置渠道表。
-2. **叫醒是「定时闹钟」，不是「想起什么」**：每次正文一样，不看最近聊了什么；连续几次都没人理
-   也照常按时叫。→ 需要内容感知 + 退避/自适应。
-3. **不持久化**：`rounds` / `lastNudgeAt` 全在内存里，重启进程就归零；「今天叫醒了几次」无从统计。
-4. **没有面板**：看不到「距下次叫醒还有多久」「上一次叫醒的结果」「今天叫了几次」，
-   也没有「现在试叫一次」的按钮，调试全靠日志。
-5. **没有节制机制**：没有免打扰时段、每日上限、按概率跳过、无人回应时的指数退避。
-6. **`maxRounds` 每段安静重置**，但一段安静可以无限长（没人说话时 0=不限），夜里会一直叫。
-7. **语言文件每次叫醒都读盘**（`model-text.ts` 的 `readFileSync`），可忽略，但改成启动时读一次更干净。
-8. **订阅窗口硬编码 500 条**，长会话里人侧事件多时扫描成本与正确性都值得复核。
-9. **World 被隐藏时叫醒会静默消失**：`pushDeferred` 对隐藏 World 直接丢弃（`core/core.ts:511-527`、`533-534`），
-   日志里也看不出「被丢掉」。改的时候要能把这两种情况分开。
+| # | 问题 | 状态 |
+|---|---|---|
+| 1 | 只认桌宠/控制台的人侧事件（微信里正聊着天也插嘴） | ✅ **P0 已修**：改成渠道无关（external 且非 `*.self`），并给 `knownChannelsOnly` 留回退；`activityIgnore` 可排除周期性系统事件 |
+| 2 | 叫醒是「定时闹钟」不是「想起什么」：正文机械、不看上下文、没人理也照叫 | ⬜ 待 P1/P3（退避 + 内容感知） |
+| 3 | 不持久化，重启后轮次/今日次数全丢 | ✅ **P0 已修**：`rhythm/state.json`，重启续算、跨天清零、坏文件容错 |
+| 4 | 看不到「距下次叫醒多久/今天叫了几次/上一次结果」 | ✅ **P0 部分修**：状态灯倒计时 + 徽标（今日次数）+ 日志带 `onEventsSettled` 结果 |
+| 5 | 没有节制机制：免打扰时段、每日上限、概率跳过、退避 | ⬜ 待 P1 |
+| 6 | `maxRounds` 每段安静重置，一段安静可以无限长，夜里会一直叫 | ⬜ 待 P1（时段表） |
+| 7 | 语言文件每次叫醒都读盘 | ⬜ 小优化，可忽略 |
+| 8 | 订阅窗口硬编码 500 条 | ⬜ 已加 `origin: 'external'` 过滤，量减半；上限本身仍硬编码 |
+| 9 | World 被隐藏时叫醒静默消失 | 🟡 **P0 部分修**：`onEventsSettled` 报 `discarded` 时计数回退并记日志；但「事件根本没被投递过」这种情况宿主不会通知，仍看不出来（受限于宿主接口） |
+| 10 | 主循环忙时叫醒会排队迟到 | ✅ **P0 已修**：`onRunPhase` + `onlyWhenIdle`，只在 idle 时叫醒 |
+
+### P0 具体改动（2026-11-01）
+
+1. **渠道无关的活动检测**（`src/world.ts:262-268`）：`origin === 'external'` && 类型不以 `.self` 结尾 &&
+   不在忽略表里。`.self` 是关键：`desktop-pet.self` 同样是 external（只是 `deliver:false`），
+   不排除就会把 Coo 自己说的话当成「有人回来了」，叫醒永远等不到。
+2. **`activityIgnore`**：逗号分隔，`qq.system*` 形式做前缀匹配，留给「某些渠道会推周期性系统事件」的情况。
+3. **`knownChannelsOnly`**：一键退回旧白名单，出事时能立刻降级。
+4. **`onlyWhenIdle` + `onRunPhase`**：模型/工具在跑时不叫醒，避免 flush 排队迟到。
+5. **状态落盘**（`src/state.ts`）：`<dataDir>/rhythm/state.json`，原子写（tmp + rename），坏文件给 warn 不崩；
+   重启时从事件库重算「最近一次人侧活动」，只恢复事件库读不出来的东西。停机太久不补叫（`stretchAlive` 判定）。
+6. **徽标 + 状态灯倒计时**（`src/ui-text.ts:lampHint`）：不需要浏览器 bundle。
+7. **结构化日志**：`作息:启动`（含是否接续）、`作息:叫醒 Coo`（轮次/今日次数/phase/最后活动类型）、
+   `作息:叫醒结果`（delivered/discarded）、`作息:有人回来了`（debug 级）。
+
+**本地验证**：`smoke.mjs` 67 条断言全绿，覆盖微信/QQ/B 站/Discord 未知渠道、`*.self` 排除、
+旧白名单回退、前缀忽略、空闲门控、重启续算、跨天清零、坏文件、投递结果回退、灯/徽标。
+**尚未真机验证**（需要装包）：见第 6 节末尾的清单。
 
 ---
 
@@ -176,6 +193,18 @@ cd D:\文档\deepseek-harness\default-workspace\selftalk
 **注意**：本 fork 换了包名与 id，可以和上游 `cortico-world-selftalk` **并存**（不会互相顶掉）。
 代价是配置不共享：上游那份 `worlds.selftalk`（30/45/3/0.2）要手工对应到 `worlds.rhythm`；
 而且两个都启用就会**各叫各的** —— 启用「作息」前先在控制台停用上游「自主发言」。
+
+### 真机验证清单（P0 之后，需要装包才有意义）
+
+本地假宿主验不到、只能在真机上确认的：
+
+1. **World 能加载**：`core.log` 出现 `World 已启动: rhythm`，控制台「模块」页有「作息」。
+2. **配置组能渲染**：三个新开关（`knownChannelsOnly` / `activityIgnore` / `onlyWhenIdle`）出现在页面上，改完立即生效。
+3. **微信渠道真的重置计时**：微信里发一条，`core.log` 出现 debug 级 `作息:有人回来了`，状态灯倒计时重置到 30 分钟。
+4. **空闲门控**：叫醒后 Coo 正在回话的那一轮里不应再排队新的叫醒（日志里 `phase` 字段不是 `idle` 时不该有叫醒）。
+5. **投递结果**：`作息:叫醒结果` 出现 `delivered`；若把 World 隐藏，看是否出现 `discarded`（宿主对「根本没投递」可能不通知）。
+6. **状态文件**：`data\home\companion\data\rhythm\state.json` 生成；重启进程后「今日叫醒」不归零。
+7. **徽标/灯**：状态灯悬停显示「约 X 分钟后叫醒…今日 N 次」。
 
 ---
 

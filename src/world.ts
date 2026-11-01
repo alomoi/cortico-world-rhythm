@@ -3,20 +3,28 @@
  * 先用哪个工具、还是什么都不说（end_turn）。叫醒靠一条 internal 事件投递，正文由
  * model-text.ts 按模型文本语言给；事件以 flush 投递，空闲的主循环收到即开始一轮。
  *
- * 「安静」的判定：从事件库里找最近一条「使用者的动作」——桌宠的打字、语音、回答、
- * 戳摸、换装，或控制台发言、按下对话按钮。Coo 自己说的话（desktop-pet.self /
- * console.self）不算：它们不能被叫醒本身重置，不然第二轮叫醒就永远等不到。
- * 使用者的动作一出现，计数清零，安静计时从那个时刻重新开始。
+ * 「安静」的判定（P0 起是渠道无关的）：事件库里最近一条「人侧事件」的时刻。
+ * 人侧事件 = `origin === 'external'` 且不是 Coo 自己的自录（`*.self`，例如
+ * `desktop-pet.self`）——它们同样是 external，只是 `deliver: false`，不算有人回来。
+ * 微信、QQ、B 站等任何扩展推的 external 事件都自动生效，不需要逐个登记类型；
+ * 确有周期性系统事件需要排除时，用 `activityIgnore` 配置（支持 `前缀*`）。
+ * 想退回旧行为（只认桌宠与控制台）就打开 `knownChannelsOnly`。
+ *
+ * 主循环状态：`onRunPhase` 只记录 phase，不做事；`onlyWhenIdle` 打开时，模型或工具
+ * 还在跑就先不叫醒（`flush` 本身不会打断在跑的回合，盲目叫醒只会让事件排队迟到）。
  *
  * 时间参数都在 worlds.rhythm 里（config.ts），每个检查周期现读，WebUI 改完立即生效。
  * 每个间隔（第一次叫醒与每次再次叫醒）各自乘以一次随机倍数（jitter），让节奏不机械。
  * 叫醒事件在投递时才渲染（pushDeferred）：如果排队期间使用者回来了，这一条作废。
+ *
+ * 状态（今日次数、本轮轮次、上次叫醒与结果）落盘到 dataDir，重启不丢；见 state.ts。
  */
-import type { World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
+import type { EventEnvelope, RunPhase, World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
 import type { Language } from 'cortico/core/language.ts';
 import { shortTime } from 'cortico/core/util.ts';
 import { rhythmConfigGroup, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
 import { NUDGE_TEXT, type ModelLanguage } from './model-text.ts';
+import { loadState, localDayKey, saveState, stateFilePath, type RhythmState } from './state.ts';
 import { uiText } from './ui-text.ts';
 
 /** 叫醒事件的类型。 */
@@ -28,13 +36,12 @@ const CHECK_EVERY_MS = 5_000;
 /** 最近 events 窗口里找使用者的动作；够覆盖一段对话，读起来便宜。 */
 const SCAN_LIMIT = 500;
 
+/** Coo 自己的自录事件都以 `.self` 结尾（desktop-pet.self / console.self），不算有人回来。 */
+const SELF_SUFFIX = '.self';
+
 /**
- * 使用者的动作：出现任何一种，就算有人在跟 Coo 互动，安静计时从头开始。
- * 内置两个对话渠道（桌宠与控制台）的全部人侧事件；Coo 自己的自录事件不在此列。
- *
- * 已知缺口（M1 要改）：这是硬编码白名单，装了别的渠道（例如微信桥的 `clawbridge.message`）
- * 时，人在那个渠道里聊天不会重置计时。改成「任何 external 且非 self 的事件」前，
- * 先确认没有周期性外部事件会误判成"有人回来了"。
+ * 旧白名单：`knownChannelsOnly` 打开时只认这些。
+ * 只在内置两个对话渠道里成立，装了别的渠道时这就是上游的那个 bug。
  */
 const ACTIVITY_TYPES: ReadonlySet<string> = new Set([
   'desktop-pet.message',
@@ -55,10 +62,21 @@ function numberIn(value: unknown, fallback: number, min: number, max: number): n
 export interface RhythmOptions {
   /** 组装层给的活引用：`worlds.rhythm`。 */
   cfg: RhythmConfigSection;
-  /** 部署时区，叫醒行里的时刻用它渲染。 */
+  /** 部署时区，叫醒行里的时刻与「今天」都按它算。 */
   timezone: string;
+  /** 部署数据目录；状态文件放它的 `rhythm/state.json`。 */
+  dataDir: string;
   /** 模型文本语言；每条事件渲染时现取。 */
   language: () => ModelLanguage;
+}
+
+interface Limits {
+  quietMinutes: number;
+  repeatMinutes: number;
+  maxRounds: number;
+  jitter: number;
+  knownChannelsOnly: boolean;
+  onlyWhenIdle: boolean;
 }
 
 export class RhythmWorld implements World {
@@ -66,36 +84,58 @@ export class RhythmWorld implements World {
 
   private host: WorldHost | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
-  /** 世界开始的时刻：找不到更早的活动时，安静从这里算。 */
-  private startedAt = 0;
-  /** 已看见的最近一次使用者动作（epoch ms）。 */
+  /** 已看见的最近一次人侧动作（epoch ms）。 */
   private lastActivitySeen = 0;
   /** 这一段安静里已叫醒几次。 */
   private rounds = 0;
   /** 上一次叫醒的时刻；repeatMinutes 从它起算。 */
   private lastNudgeAt = 0;
-  /** 第一次叫醒间隔的随机倍数（1–1+jitter），一段安静里固定，免得来回抖。 */
+  /** 下一个间隔的随机倍数（1–1+jitter）。 */
   private jitterFactor = 1;
+  /** 主循环此刻的状态；只由 onRunPhase 写。初值按 Core 构造时的 idle。 */
+  private phaseState: RunPhase['state'] = 'idle';
+  /** 落盘的运行时状态（今日次数、上次结果等）。 */
+  private state: RhythmState;
 
-  constructor(private readonly opts: RhythmOptions) {}
+  constructor(private readonly opts: RhythmOptions) {
+    this.state = {
+      version: 1,
+      dayKey: localDayKey(opts.timezone, Date.now()),
+      nudgesToday: 0,
+      rounds: 0,
+      lastNudgeAt: null,
+      lastOutcome: null,
+      lastOutcomeAt: null,
+    };
+  }
 
   /** 不加环境段：机制只通过叫醒事件本身说明，不占每次请求的前缀。 */
   envPromptVars(): null {
     return null;
   }
 
-  /** 控制台「模块」页的名片：名字、状态灯与配置组。 */
+  /** 控制台「模块」页的名片：名字、状态灯、徽标与配置组。 */
   webUi(language?: Language): WorldWebUiDecl {
     const t = uiText(language);
-    const quietMinutes = this.limits().quietMinutes;
-    const maxRounds = this.limits().maxRounds;
+    const limits = this.limits();
+    const capped = limits.maxRounds > 0 && this.rounds >= limits.maxRounds;
+    const nextInMinutes = limits.quietMinutes > 0 && !capped ? this.minutesUntilDue() : null;
     return {
       label: t.label,
       lamps: [{
         label: t.lampLabel,
         state: 'online',
-        hint: quietMinutes > 0 ? t.lampHint(quietMinutes, maxRounds) : t.lampOff,
+        hint: limits.quietMinutes > 0
+          ? t.lampHint({
+            quietMinutes: limits.quietMinutes,
+            maxRounds: limits.maxRounds,
+            nudgesToday: this.state.nudgesToday,
+            nextInMinutes,
+            capped,
+          })
+          : t.lampOff,
       }],
+      badges: [{ label: t.badgeToday, value: this.state.nudgesToday, tone: this.state.nudgesToday > 0 ? 'on' : 'plain' }],
       config: [rhythmConfigGroup(language ?? 'zh')],
     };
   }
@@ -108,9 +148,42 @@ export class RhythmWorld implements World {
   async start(host: WorldHost): Promise<void> {
     this.host = host;
     const now = Date.now();
-    this.startedAt = now;
-    this.lastActivitySeen = now;
-    this.rounds = 0;
+    const dayKey = localDayKey(this.opts.timezone, now);
+    const { state, error } = loadState(stateFilePath(this.opts.dataDir), dayKey);
+    this.state = state;
+    if (error) host.log.warn('作息:状态文件读不出来，按新的一天开始', { error });
+
+    // 最近一次人侧活动从事件库重算（不落盘，避免和事件库打架）。
+    this.lastActivitySeen = 0;
+    const latest = this.latestPersonActivity();
+    const limits = this.limits();
+    const quietMs = Math.max(limits.quietMinutes, 1) * 60_000;
+    const repeatMs = Math.max(limits.repeatMinutes, 1) * 60_000;
+    const savedNudgeAt = state.lastNudgeAt ? Date.parse(state.lastNudgeAt) : 0;
+    // 同一段安静还在延续：上次叫醒之后没人说话，且没隔太久。
+    // 满足才接上轮次，否则就当重新开始，避免开机就补叫一轮。
+    const spokeSinceNudge = latest.at > savedNudgeAt;
+    const stretchAlive = savedNudgeAt > 0 && !spokeSinceNudge && now - savedNudgeAt <= repeatMs * 2;
+    if (stretchAlive) {
+      this.lastActivitySeen = latest.at > 0 ? latest.at : now;
+      this.lastNudgeAt = savedNudgeAt;
+      this.rounds = state.rounds;
+    } else {
+      this.rounds = 0;
+      this.lastNudgeAt = 0;
+      // 停机不久、还在安静窗口里：接着算；否则从此刻重新安静。
+      this.lastActivitySeen = latest.at > 0 && now - latest.at <= quietMs ? latest.at : now;
+    }
+    host.log.info('作息:启动', {
+      quietMinutes: limits.quietMinutes,
+      maxRounds: limits.maxRounds,
+      nudgesToday: state.nudgesToday,
+      rounds: this.rounds,
+      stretchAlive,
+      lastNudgeAt: this.lastNudgeAt > 0 ? new Date(this.lastNudgeAt).toISOString() : null,
+      quietSince: new Date(this.lastActivitySeen).toISOString(),
+    });
+
     this.rollJitter();
     this.timer = setInterval(() => this.tick(), CHECK_EVERY_MS);
   }
@@ -118,10 +191,27 @@ export class RhythmWorld implements World {
   async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.persist();
     this.host = null;
   }
 
-  private limits(): { quietMinutes: number; repeatMinutes: number; maxRounds: number; jitter: number } {
+  /** 主循环的阶段变化：只记录，不做耗时的事（这个钩子在主循环调用栈上）。 */
+  onRunPhase(phase: RunPhase): void {
+    this.phaseState = phase.state;
+  }
+
+  /** 自己那条叫醒事件的归宿：记下投递结果，被丢弃时把今日计数退回去。 */
+  onEventsSettled(events: readonly EventEnvelope[], outcome: 'delivered' | 'discarded'): void {
+    const mine = events.filter((event) => event.type === NUDGE_TYPE);
+    if (!mine.length) return;
+    this.state.lastOutcome = outcome;
+    this.state.lastOutcomeAt = new Date().toISOString();
+    if (outcome === 'discarded') this.state.nudgesToday = Math.max(0, this.state.nudgesToday - 1);
+    this.host?.log.info('作息:叫醒结果', { outcome, count: mine.length, nudgesToday: this.state.nudgesToday });
+    this.persist();
+  }
+
+  private limits(): Limits {
     const cfg = this.opts.cfg;
     return {
       quietMinutes: numberIn(cfg.quietMinutes, 15, 0, 720),
@@ -129,6 +219,8 @@ export class RhythmWorld implements World {
       // 0 表示不限；正数即上限，没有额外的数字上限
       maxRounds: Math.max(0, Math.floor(numberIn(cfg.maxRounds, 0, 0, Number.MAX_SAFE_INTEGER))),
       jitter: numberIn(cfg.jitter, 0.2, 0, 0.5),
+      knownChannelsOnly: cfg.knownChannelsOnly === true,
+      onlyWhenIdle: cfg.onlyWhenIdle !== false,
     };
   }
 
@@ -137,67 +229,161 @@ export class RhythmWorld implements World {
     this.jitterFactor = 1 + Math.random() * this.limits().jitter;
   }
 
-  /** 最近一条使用者动作的时刻；上限是已知时刻。 */
-  private latestPersonActivity(): number {
+  /** 下一次叫醒的时刻；配置关掉时返回 null。 */
+  private dueAt(limits: Limits): number | null {
+    if (limits.quietMinutes <= 0) return null;
+    return this.rounds === 0
+      ? this.lastActivitySeen + limits.quietMinutes * 60_000 * this.jitterFactor
+      : this.lastNudgeAt + limits.repeatMinutes * 60_000 * this.jitterFactor;
+  }
+
+  private minutesUntilDue(): number | null {
+    const due = this.dueAt(this.limits());
+    if (due === null) return null;
+    return Math.max(0, Math.ceil((due - Date.now()) / 60_000));
+  }
+
+  /** `activityIgnore` 是否命中：精确匹配，或以 * 结尾的前缀匹配。 */
+  private isIgnored(type: string): boolean {
+    const raw = this.opts.cfg.activityIgnore;
+    if (typeof raw !== 'string' || raw.trim() === '') return false;
+    for (const entry of raw.split(',')) {
+      const pattern = entry.trim();
+      if (!pattern) continue;
+      if (pattern.endsWith('*') ? type.startsWith(pattern.slice(0, -1)) : type === pattern) return true;
+    }
+    return false;
+  }
+
+  /**
+   * 一条事件是不是「有人回来了」。
+   * 自录事件（`*.self`）是 external，但那是 Coo 自己说的话，会把叫醒本身当成活动，必须排除。
+   */
+  private isPersonActivity(event: EventEnvelope): boolean {
+    if (event.origin !== 'external') return false;
+    if (event.type === NUDGE_TYPE) return false;
+    if (event.type.endsWith(SELF_SUFFIX)) return false;
+    if (this.isIgnored(event.type)) return false;
+    return this.limits().knownChannelsOnly ? ACTIVITY_TYPES.has(event.type) : true;
+  }
+
+  /** 最近一条人侧动作的时刻与类型；上限是已知时刻。 */
+  private latestPersonActivity(): { at: number; type: string } {
     const host = this.host;
-    if (!host) return this.lastActivitySeen;
-    let latest = this.lastActivitySeen;
+    if (!host) return { at: this.lastActivitySeen, type: '' };
+    let at = this.lastActivitySeen;
+    let type = '';
     try {
-      for (const event of host.store.range({ limit: SCAN_LIMIT })) {
-        if (!ACTIVITY_TYPES.has(event.type)) continue;
-        const at = Date.parse(event.ts);
-        if (Number.isFinite(at) && at > latest) latest = at;
+      for (const event of host.store.range({ limit: SCAN_LIMIT, origin: 'external' })) {
+        if (!this.isPersonActivity(event)) continue;
+        const when = Date.parse(event.ts);
+        if (Number.isFinite(when) && when > at) {
+          at = when;
+          type = event.type;
+        }
       }
     } catch {
       // 事件库读不出（还在重建）：这一拍按没有新活动处理
     }
-    return latest;
+    return { at, type };
   }
 
   private tick(): void {
     const host = this.host;
     if (!host) return;
-    const { quietMinutes, repeatMinutes, maxRounds } = this.limits();
-    if (quietMinutes <= 0) return;
+    const now = Date.now();
+    this.rollDay(now);
+
+    const limits = this.limits();
+    if (limits.quietMinutes <= 0) return;
 
     const latest = this.latestPersonActivity();
-    if (latest > this.lastActivitySeen) {
-      this.lastActivitySeen = latest;
+    if (latest.at > this.lastActivitySeen) {
+      const hadRounds = this.rounds > 0;
+      this.lastActivitySeen = latest.at;
       this.rounds = 0;
       this.rollJitter();
+      host.log.debug('作息:有人回来了，安静计时重新开始', {
+        type: latest.type,
+        idleMinutes: Math.round((now - latest.at) / 60_000),
+      });
+      if (hadRounds) this.persist();
     }
 
-    const now = Date.now();
+    // 它正在跑模型或工具：等这一轮结束再看，别把叫醒塞进人家手上的活里。
+    if (limits.onlyWhenIdle && this.phaseState !== 'idle') return;
+
     // maxRounds 为 0 表示不限：一段安静里可以一直叫醒，直到有人说话
-    if (this.rounds >= maxRounds && maxRounds > 0) return;
-    // 每个间隔各自乘以当轮掷出的随机倍数：第一次是安静起点掷的，再次叫醒是上一次叫醒时掷的
-    const due = this.rounds === 0
-      ? this.lastActivitySeen + quietMinutes * 60_000 * this.jitterFactor
-      : this.lastNudgeAt + repeatMinutes * 60_000 * this.jitterFactor;
-    if (now < due) return;
-    this.nudge(now);
+    if (limits.maxRounds > 0 && this.rounds >= limits.maxRounds) return;
+
+    const due = this.dueAt(limits);
+    if (due === null || now < due) return;
+    this.nudge(now, latest);
   }
 
-  private nudge(now: number): void {
+  /** 跨天清零「今日叫醒」；不重置本轮轮次（一段安静可以跨午夜）。 */
+  private rollDay(now: number): void {
+    const key = localDayKey(this.opts.timezone, now);
+    if (key === this.state.dayKey) return;
+    this.state.dayKey = key;
+    this.state.nudgesToday = 0;
+    this.host?.log.info('作息:新的一天，今日叫醒计数清零', { day: key });
+    this.persist();
+  }
+
+  private nudge(now: number, latest: { at: number; type: string }): void {
     const host = this.host;
     if (!host) return;
+    const limits = this.limits();
     const again = this.rounds > 0;
     this.rounds += 1;
     this.lastNudgeAt = now;
+    this.state.nudgesToday += 1;
     // 下一次「再次叫醒」间隔的随机倍数现在掷
     this.rollJitter();
-    host.log.info('作息:叫醒 Coo', { round: this.rounds, again });
+    const quietMinutes = Math.max(1, Math.round((now - this.lastActivitySeen) / 60_000));
+    host.log.info('作息:叫醒 Coo', {
+      round: this.rounds,
+      again,
+      quietMinutes,
+      nudgesToday: this.state.nudgesToday,
+      maxRounds: limits.maxRounds,
+      phase: this.phaseState,
+      lastActivityType: latest.type,
+    });
     host.pushDeferred({
       type: NUDGE_TYPE,
       origin: 'internal',
       senderKey: NUDGE_TYPE,
       render: () => {
         // 排队期间使用者回来了：这一条作废，安静从新的活动时刻重新算。
-        if (this.latestPersonActivity() > this.lastNudgeAt) return null;
+        if (this.latestPersonActivity().at > this.lastNudgeAt) {
+          // 排队时已经预记了次数与轮次，这里退回去，免得「没叫醒」也算进今日次数。
+          this.rounds = Math.max(0, this.rounds - 1);
+          this.state.nudgesToday = Math.max(0, this.state.nudgesToday - 1);
+          this.persist();
+          return null;
+        }
         const elapsed = Math.max(1, Math.round((Date.now() - this.lastActivitySeen) / 60_000));
         const language = this.opts.language();
         return NUDGE_TEXT[language]({ at: shortTime(this.opts.timezone), quietMinutes: elapsed, again });
       },
     }, { trigger: 'flush' });
+    this.persist();
+  }
+
+  /** 落盘：只写事件库读不出来的那些事实。 */
+  private persist(): void {
+    if (!this.opts.dataDir) return;
+    const { error } = saveState(stateFilePath(this.opts.dataDir), {
+      version: 1,
+      dayKey: this.state.dayKey,
+      nudgesToday: this.state.nudgesToday,
+      rounds: this.rounds,
+      lastNudgeAt: this.lastNudgeAt > 0 ? new Date(this.lastNudgeAt).toISOString() : null,
+      lastOutcome: this.state.lastOutcome,
+      lastOutcomeAt: this.state.lastOutcomeAt,
+    });
+    if (error) this.host?.log.warn('作息:状态写不进去', { error });
   }
 }
