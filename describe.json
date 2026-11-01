@@ -1,0 +1,13 @@
+{
+  "tools": [],
+  "events": [
+    {
+      "type": "selftalk.nudge",
+      "description": {
+        "zh": "安静了设定的时长后，应用叫醒 Coo 的一条自主发言提示：开不开口、做什么由 Coo 自己决定。",
+        "en": "After the configured quiet time the app wakes the bot with a self-talk line; whether to speak or act is the bot's own call."
+      },
+      "trigger": "flush"
+    }
+  ]
+}
