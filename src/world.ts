@@ -13,6 +13,13 @@
  * 作息时段（P1）：`sleepWindow` 与 `restWindows` 里不主动叫醒。离开时段时安静计时从
  * 离开那一刻重新开始，不会在睡醒的整点立刻跳出来。排队期间跨进时段同样作废。
  *
+ * 睡眠表现（P2，全部是「建议」而非命令）：
+ * - 进睡眠时段发一句「该睡了」、出睡眠时段发一句「该醒了」（`sleepHint`，文案可改）；
+ * - 睡眠时段内有人来找 Coo 时，按 `wakeGapMinutes` 合并计一次「被吵醒」，
+ *   留一条归档事件 `rhythm.woke`，并在 `wakeHint` 打开时投一条 piggyback 提示
+ *   （只搭着这一轮走，超过 90 秒就作废，不会事后突然冒出起床气）。
+ * - 同时把公开状态写到 `<dataDir>/rhythm/status.json`，供其他插件读取。
+ *
  * 节制（P1）：`dailyCap` 是每日硬上限；`backoffAfter` / `backoffFactor` /
  * `backoffMaxFactor` 让「一直没人理」时的再次叫醒越来越稀（人一说话就恢复）。
  * 这两个机制都只影响「自己的叫醒」，不碰桌宠的任何其他行为。
@@ -24,17 +31,25 @@
  * 每个间隔（第一次叫醒与每次再次叫醒）各自乘以一次随机倍数（jitter），让节奏不机械。
  * 叫醒事件在投递时才渲染（pushDeferred）：如果排队期间使用者回来了，这一条作废。
  */
+import { join } from 'node:path';
 import type { EventEnvelope, RunPhase, World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
 import type { Language } from 'cortico/core/language.ts';
 import { shortTime } from 'cortico/core/util.ts';
 import { rhythmConfigGroup, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
+import { fillTemplate, loadMessages, messagesPath, type HintKind } from './messages.ts';
 import { NUDGE_TEXT, type ModelLanguage } from './model-text.ts';
-import { loadState, localDayKey, saveState, stateFilePath, type RhythmState } from './state.ts';
+import { loadState, localDayKey, saveState, stateFilePath, writeJsonAtomic, type RhythmState } from './state.ts';
 import { uiText, type LampInfo } from './ui-text.ts';
 import { formatClock, matchWindow, minutesOfDay, parseWindowList, type ClockWindow } from './windows.ts';
 
 /** 叫醒事件的类型。 */
 export const NUDGE_TYPE = 'rhythm.nudge';
+
+/** 睡眠提示事件的类型（入睡 / 醒来 / 被吵醒）。 */
+export const HINT_TYPE = 'rhythm.hint';
+
+/** 被吵醒的归档事件：只入库、不投递。 */
+export const WOKE_TYPE = 'rhythm.woke';
 
 /** 检查周期：配置以分钟计，5 秒的粒度足够，也几乎不花什么。 */
 const CHECK_EVERY_MS = 5_000;
@@ -44,6 +59,9 @@ const SCAN_LIMIT = 500;
 
 /** Coo 自己的自录事件都以 `.self` 结尾（desktop-pet.self / console.self），不算有人回来。 */
 const SELF_SUFFIX = '.self';
+
+/** 「被吵醒」提示的保鲜期：超过它就作废，避免对话结束很久后突然冒出起床气。 */
+const WAKE_HINT_STALE_MS = 90_000;
 
 /**
  * 旧白名单：`knownChannelsOnly` 打开时只认这些。
@@ -70,7 +88,7 @@ export interface RhythmOptions {
   cfg: RhythmConfigSection;
   /** 部署时区，叫醒行里的时刻、时段与「今天」都按它算。 */
   timezone: string;
-  /** 部署数据目录；状态文件放它的 `rhythm/state.json`。 */
+  /** 部署数据目录；状态、公开状态与提示文案都放它的 `rhythm/` 下。 */
   dataDir: string;
   /** 模型文本语言；每条事件渲染时现取。 */
   language: () => ModelLanguage;
@@ -86,6 +104,9 @@ interface Limits {
   backoffFactor: number;
   backoffMaxFactor: number;
   skipChance: number;
+  sleepHint: boolean;
+  wakeHint: boolean;
+  wakeGapMinutes: number;
   knownChannelsOnly: boolean;
   onlyWhenIdle: boolean;
 }
@@ -105,16 +126,18 @@ export class RhythmWorld implements World {
   private jitterFactor = 1;
   /** 主循环此刻的状态；只由 onRunPhase 写。初值按 Core 构造时的 idle。 */
   private phaseState: RunPhase['state'] = 'idle';
-  /** 落盘的运行时状态（今日次数、上次结果等）。 */
+  /** 落盘的运行时状态（今日次数、睡眠会话等）。 */
   private state: RhythmState;
   /** 时段缓存的原始字符串；配置热改时重解析。 */
   private windowsKey = '';
   private sleepWindows: ClockWindow[] = [];
   private restWindows: ClockWindow[] = [];
-  /** 上一拍是否在睡眠/休息时段里；用来发现「刚睡醒」。 */
+  /** 上一拍是否在睡眠/休息时段里；用来发现「刚睡醒」与进入时发提示。 */
   private lastWindow: 'sleep' | 'rest' | null = null;
   /** 概率跳过时压制到这一刻（epoch ms）。 */
   private suppressedUntil = 0;
+  /** 文案文件的损坏只报一次，别每次提示都刷屏。 */
+  private messagesWarned = false;
 
   constructor(private readonly opts: RhythmOptions) {
     this.state = {
@@ -125,10 +148,19 @@ export class RhythmWorld implements World {
       lastNudgeAt: null,
       lastOutcome: null,
       lastOutcomeAt: null,
+      sleep: {
+        nightKey: null,
+        sleepHintSent: false,
+        wakeHintSent: false,
+        wokeCount: 0,
+        lastWokeAt: null,
+        lastWokeBy: null,
+        lastCountedAt: null,
+      },
     };
   }
 
-  /** 不加环境段：机制只通过叫醒事件本身说明，不占每次请求的前缀。 */
+  /** 不加环境段：机制只通过事件本身说明，不占每次请求的前缀。 */
   envPromptVars(): null {
     return null;
   }
@@ -162,6 +194,7 @@ export class RhythmWorld implements World {
     const { state, error } = loadState(stateFilePath(this.opts.dataDir), dayKey);
     this.state = state;
     if (error) host.log.warn('作息:状态文件读不出来，按新的一天开始', { error });
+    this.warnMessageProblems();
 
     // 最近一次人侧活动从事件库重算（不落盘，避免和事件库打架）。
     this.lastActivitySeen = 0;
@@ -184,18 +217,39 @@ export class RhythmWorld implements World {
       // 停机不久、还在安静窗口里：接着算；否则从此刻重新安静。
       this.lastActivitySeen = latest.at > 0 && now - latest.at <= quietMs ? latest.at : now;
     }
+
     this.refreshWindows();
-    this.lastWindow = this.currentWindow(now)?.kind ?? null;
+    const opening = this.currentWindow(now);
+    this.lastWindow = opening?.kind ?? null;
+    if (opening?.kind === 'sleep') {
+      // 重启时已经在睡眠时段里：不补发「该睡了」，但把这一夜记成已发，免得下次进入又发。
+      const key = this.nightKeyOf(opening.window, now);
+      if (this.state.sleep.nightKey !== key) {
+        this.state.sleep = {
+          nightKey: key,
+          sleepHintSent: true,
+          wakeHintSent: false,
+          wokeCount: 0,
+          lastWokeAt: null,
+          lastWokeBy: null,
+          lastCountedAt: null,
+        };
+        this.persist();
+      }
+    }
     host.log.info('作息:启动', {
       quietMinutes: limits.quietMinutes,
       maxRounds: limits.maxRounds,
       dailyCap: limits.dailyCap,
       sleepWindow: String(this.opts.cfg.sleepWindow ?? ''),
       restWindows: String(this.opts.cfg.restWindows ?? ''),
+      sleepHint: limits.sleepHint,
+      wakeHint: limits.wakeHint,
       nudgesToday: state.nudgesToday,
       rounds: this.rounds,
       stretchAlive,
       inWindow: this.lastWindow,
+      wokeCount: this.state.sleep.wokeCount,
       lastNudgeAt: this.lastNudgeAt > 0 ? new Date(this.lastNudgeAt).toISOString() : null,
       quietSince: new Date(this.lastActivitySeen).toISOString(),
     });
@@ -240,6 +294,9 @@ export class RhythmWorld implements World {
       backoffFactor: numberIn(cfg.backoffFactor, 1.5, 1, 3),
       backoffMaxFactor: numberIn(cfg.backoffMaxFactor, 4, 1, 10),
       skipChance: numberIn(cfg.skipChance, 0, 0, 1),
+      sleepHint: cfg.sleepHint !== false,
+      wakeHint: cfg.wakeHint !== false,
+      wakeGapMinutes: Math.floor(numberIn(cfg.wakeGapMinutes, 30, 1, 240)),
       knownChannelsOnly: cfg.knownChannelsOnly === true,
       onlyWhenIdle: cfg.onlyWhenIdle !== false,
     };
@@ -269,6 +326,14 @@ export class RhythmWorld implements World {
     const rest = matchWindow(minute, this.restWindows);
     if (rest) return { kind: 'rest', window: rest };
     return null;
+  }
+
+  /** 这一夜的身份：睡眠时段开始那天的本地日期。 */
+  private nightKeyOf(window: ClockWindow, nowMs: number): string {
+    const minute = minutesOfDay(nowMs, this.opts.timezone);
+    return minute >= window.start
+      ? localDayKey(this.opts.timezone, nowMs)
+      : localDayKey(this.opts.timezone, nowMs - 24 * 3_600_000);
   }
 
   /** 退避倍数：连续没人理之后越大，封顶 backoffMaxFactor。 */
@@ -341,6 +406,7 @@ export class RhythmWorld implements World {
   private isPersonActivity(event: EventEnvelope): boolean {
     if (event.origin !== 'external') return false;
     if (event.type === NUDGE_TYPE) return false;
+    if (event.type === HINT_TYPE) return false;
     if (event.type.endsWith(SELF_SUFFIX)) return false;
     if (this.isIgnored(event.type)) return false;
     return this.limits().knownChannelsOnly ? ACTIVITY_TYPES.has(event.type) : true;
@@ -378,30 +444,14 @@ export class RhythmWorld implements World {
 
     this.refreshWindows();
 
-    // 睡眠/休息时段：不主动叫醒，也不推进安静计时（醒来后从那一刻重新算）。
+    // 睡眠/休息时段：不主动叫醒；睡眠时段内还要数「被吵醒」。
     const windowNow = this.currentWindow(now);
     if (windowNow) {
-      if (this.lastWindow !== windowNow.kind) {
-        this.lastWindow = windowNow.kind;
-        host.log.info(windowNow.kind === 'sleep' ? '作息:进入睡眠时段' : '作息:进入休息时段', {
-          until: formatClock(windowNow.window.end),
-        });
-      }
+      if (this.lastWindow !== windowNow.kind) this.enterWindow(windowNow, now);
+      if (windowNow.kind === 'sleep') this.countWakes(now, limits);
       return;
     }
-    if (this.lastWindow) {
-      // 刚离开时段：安静与轮次都从头开始，避免睡醒整点立刻跳出来。
-      this.lastWindow = null;
-      this.lastActivitySeen = now;
-      this.rounds = 0;
-      this.lastNudgeAt = 0;
-      this.suppressedUntil = 0;
-      this.rollJitter();
-      host.log.info('作息:休息结束，安静计时重新开始', {
-        quietMinutes: limits.quietMinutes,
-        nudgesToday: this.state.nudgesToday,
-      });
-    }
+    if (this.lastWindow) this.leaveWindow(now, limits);
 
     const latest = this.latestPersonActivity();
     if (latest.at > this.lastActivitySeen) {
@@ -438,6 +488,168 @@ export class RhythmWorld implements World {
     }
     this.nudge(now, latest);
   }
+
+  // ── 睡眠时段 ────────────────────────────────────────────────────────────
+
+  /** 进入某个时段；进入睡眠时段时开一夜的会话并发「该睡了」。 */
+  private enterWindow(windowNow: { kind: 'sleep' | 'rest'; window: ClockWindow }, now: number): void {
+    const host = this.host;
+    this.lastWindow = windowNow.kind;
+    if (windowNow.kind !== 'sleep') {
+      host?.log.info('作息:进入休息时段', { until: formatClock(windowNow.window.end) });
+      return;
+    }
+    const key = this.nightKeyOf(windowNow.window, now);
+    const limits = this.limits();
+    if (this.state.sleep.nightKey !== key) {
+      this.state.sleep = {
+        nightKey: key,
+        sleepHintSent: false,
+        wakeHintSent: false,
+        wokeCount: 0,
+        lastWokeAt: null,
+        lastWokeBy: null,
+        lastCountedAt: null,
+      };
+      if (limits.sleepHint) {
+        this.sendHint('sleep', now);
+        this.state.sleep.sleepHintSent = true;
+      }
+      this.persist();
+    }
+    host?.log.info('作息:进入睡眠时段', {
+      night: key,
+      until: formatClock(windowNow.window.end),
+      hint: limits.sleepHint ? 'sent' : 'off',
+    });
+  }
+
+  /** 离开时段；离开睡眠时段时发「该醒了」并收尾这一夜。 */
+  private leaveWindow(now: number, limits: Limits): void {
+    const host = this.host;
+    const was = this.lastWindow;
+    this.lastWindow = null;
+    if (was === 'rest') {
+      host?.log.info('作息:休息时段结束，安静计时重新开始', { quietMinutes: limits.quietMinutes });
+    } else {
+      if (limits.sleepHint && this.state.sleep.sleepHintSent && !this.state.sleep.wakeHintSent) {
+        this.sendHint('wake', now);
+        this.state.sleep.wakeHintSent = true;
+      }
+      host?.log.info('作息:睡眠时段结束', {
+        wokeCount: this.state.sleep.wokeCount,
+        hints: { sleep: this.state.sleep.sleepHintSent, wake: this.state.sleep.wakeHintSent },
+      });
+      this.state.sleep = {
+        nightKey: null,
+        sleepHintSent: false,
+        wakeHintSent: false,
+        wokeCount: 0,
+        lastWokeAt: null,
+        lastWokeBy: null,
+        lastCountedAt: null,
+      };
+      this.persist();
+    }
+    // 无论 sleep 还是 rest：安静与轮次都从头开始，避免时段结束整点立刻跳出来。
+    this.lastActivitySeen = now;
+    this.rounds = 0;
+    this.lastNudgeAt = 0;
+    this.suppressedUntil = 0;
+    this.rollJitter();
+  }
+
+  /**
+   * 睡眠时段内数「被吵醒」：同一场打扰按 `wakeGapMinutes` 合并；
+   * 每计一次就落一条归档事件，并按需投一条 piggyback 的起床气提示。
+   */
+  private countWakes(now: number, limits: Limits): void {
+    const host = this.host;
+    if (!host) return;
+    const latest = this.latestPersonActivity();
+    if (latest.at === 0) return;
+    if (latest.at > this.lastActivitySeen) this.lastActivitySeen = latest.at;
+    if (!latest.type) return;
+
+    const gapMs = limits.wakeGapMinutes * 60_000;
+    const countedAt = this.state.sleep.lastCountedAt ? Date.parse(this.state.sleep.lastCountedAt) : 0;
+    if (latest.at - countedAt < gapMs) return;
+
+    this.state.sleep.wokeCount += 1;
+    this.state.sleep.lastWokeAt = new Date(latest.at).toISOString();
+    this.state.sleep.lastWokeBy = latest.type;
+    this.state.sleep.lastCountedAt = new Date(latest.at).toISOString();
+    host.log.info('作息:被吵醒', {
+      by: latest.type,
+      wokeCount: this.state.sleep.wokeCount,
+      sinceLastWokeMin: countedAt > 0 ? Math.round((latest.at - countedAt) / 60_000) : null,
+    });
+    // 归档事件：只入库、不投递，供同进程的其他插件按时间轴读取。
+    void host.pushEvent({
+      type: WOKE_TYPE,
+      ts: new Date(latest.at).toISOString(),
+      source: RHYTHM_ID,
+      origin: 'internal',
+      senderKey: WOKE_TYPE,
+      text: `睡眠时段内被 ${latest.type} 吵醒（今夜第 ${this.state.sleep.wokeCount} 次）`,
+      meta: { count: this.state.sleep.wokeCount, by: latest.type },
+    }, { deliver: false }).catch((error: unknown) => {
+      host.log.warn('作息:被吵醒记录没写进去', { error });
+    });
+    if (limits.wakeHint) {
+      this.sendHint('woken', now, { by: latest.type, count: this.state.sleep.wokeCount });
+    }
+    this.persist();
+  }
+
+  // ── 提示 ────────────────────────────────────────────────────────────────
+
+  /** 读一次文案文件（允许热改；坏了就退回默认并只报一次）。 */
+  private readMessages(): ReturnType<typeof loadMessages>['messages'] {
+    const { messages, problems } = loadMessages(messagesPath(this.opts.dataDir));
+    if (problems.length && !this.messagesWarned) {
+      this.messagesWarned = true;
+      this.host?.log.warn('作息:提示文案文件有问题，先用内置默认', { problems });
+    }
+    return messages;
+  }
+
+  private warnMessageProblems(): void {
+    const { problems } = loadMessages(messagesPath(this.opts.dataDir));
+    if (problems.length) {
+      this.messagesWarned = true;
+      this.host?.log.warn('作息:提示文案文件有问题，先用内置默认', { problems });
+    }
+  }
+
+  /**
+   * 发一条睡眠提示。
+   * `sleep` / `wake` 用 flush（要及时送到）；`woken` 用 piggyback（只搭着正在进行的一轮走），
+   * 并且超过保鲜期就作废——永远不在对话结束后突然冒出「你刚才被吵醒了」。
+   */
+  private sendHint(kind: HintKind, now: number, vars: { by?: string; count?: number } = {}): void {
+    const host = this.host;
+    if (!host) return;
+    const template = this.readMessages()[this.opts.language()][kind];
+    const text = fillTemplate(template, {
+      at: shortTime(this.opts.timezone, new Date(now)),
+      by: vars.by ?? '',
+      count: vars.count === undefined ? '' : String(vars.count),
+    });
+    host.log.info('作息:睡眠提示', { kind, phase: this.phaseState });
+    host.pushDeferred({
+      type: HINT_TYPE,
+      origin: 'internal',
+      senderKey: HINT_TYPE,
+      meta: { kind },
+      render: () => {
+        if (kind === 'woken' && Date.now() - now > WAKE_HINT_STALE_MS) return null;
+        return text;
+      },
+    }, { trigger: kind === 'woken' ? 'piggyback' : 'flush' });
+  }
+
+  // ── 叫醒 ────────────────────────────────────────────────────────────────
 
   /** 跨天清零「今日叫醒」；不重置本轮轮次（一段安静可以跨午夜）。 */
   private rollDay(now: number): void {
@@ -506,7 +718,9 @@ export class RhythmWorld implements World {
     return true;
   }
 
-  /** 落盘：只写事件库读不出来的那些事实。 */
+  // ── 落盘 ────────────────────────────────────────────────────────────────
+
+  /** 落盘：内部状态 + 对外公开的 status.json。 */
   private persist(): void {
     if (!this.opts.dataDir) return;
     const { error } = saveState(stateFilePath(this.opts.dataDir), {
@@ -517,7 +731,32 @@ export class RhythmWorld implements World {
       lastNudgeAt: this.lastNudgeAt > 0 ? new Date(this.lastNudgeAt).toISOString() : null,
       lastOutcome: this.state.lastOutcome,
       lastOutcomeAt: this.state.lastOutcomeAt,
+      sleep: this.state.sleep,
     });
     if (error) this.host?.log.warn('作息:状态写不进去', { error });
+    this.writeStatus();
+  }
+
+  /** 给其他软件读的公开状态：只放非敏感事实。 */
+  private writeStatus(): void {
+    const now = Date.now();
+    const limits = this.limits();
+    this.refreshWindows();
+    const windowNow = this.currentWindow(now);
+    const sleeping = windowNow?.kind === 'sleep';
+    const { error } = writeJsonAtomic(join(this.opts.dataDir, 'rhythm', 'status.json'), {
+      version: 1,
+      generatedAt: new Date(now).toISOString(),
+      sleep: {
+        active: sleeping,
+        window: sleeping && windowNow ? `${formatClock(windowNow.window.start)}-${formatClock(windowNow.window.end)}` : null,
+        endsAt: sleeping && windowNow ? formatClock(windowNow.window.end) : null,
+        wokeCount: this.state.sleep.wokeCount,
+        lastWokeAt: this.state.sleep.lastWokeAt,
+        lastWokeBy: this.state.sleep.lastWokeBy,
+      },
+      today: { nudges: this.state.nudgesToday, cap: limits.dailyCap },
+    });
+    if (error) this.host?.log.warn('作息:公开状态写不进去', { error });
   }
 }

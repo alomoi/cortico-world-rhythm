@@ -49,6 +49,12 @@ export interface RhythmUi {
   backoffFactorDescription: string;
   backoffMaxTitle: string;
   backoffMaxDescription: string;
+  sleepHintTitle: string;
+  sleepHintDescription: string;
+  wakeHintTitle: string;
+  wakeHintDescription: string;
+  wakeGapTitle: string;
+  wakeGapDescription: string;
   knownChannelsTitle: string;
   knownChannelsDescription: string;
   activityIgnoreTitle: string;
@@ -89,6 +95,12 @@ const zh: RhythmUi = {
   backoffFactorDescription: '每多一次没人回应，间隔乘这个数（1.0–3.0）。例如 1.5 表示每次延长一半。',
   backoffMaxTitle: '变稀封顶',
   backoffMaxDescription: '间隔最多拉长到基准的多少倍（1–10），防止越等越久。',
+  sleepHintTitle: '睡眠时段给 Coo 提示',
+  sleepHintDescription: '到点发一句「该睡了」、早上发一句「该醒了」，让 Coo 自己决定用不用 pet_act 躺下或站起来。文案在 data/rhythm/messages.json 里改。只在启用了睡眠时段时生效。',
+  wakeHintTitle: '被吵醒时提示 Coo',
+  wakeHintDescription: '睡眠时段里有人来找 Coo 时，搭着这一轮给它一句「你被吵醒了」，由它自己决定要不要有点起床气。超过 90 秒没搭上车就作废，不会事后突然冒出来。',
+  wakeGapTitle: '同一场打扰的合并间隔',
+  wakeGapDescription: '这几分钟内连续来的消息只算一次「被吵醒」；超过它再来人才算又一次。缺省 30 分钟。',
   knownChannelsTitle: '只把桌宠和控制台当成有人',
   knownChannelsDescription: '打开后只认桌宠与控制台的旧事件清单（旧版本行为），微信、QQ 等其他渠道的消息不算“有人回来了”。默认关闭：任何渠道的人侧事件都算。',
   activityIgnoreTitle: '不算“有人回来了”的事件类型',
@@ -143,6 +155,12 @@ const en: RhythmUi = {
   backoffFactorDescription: 'Each extra unanswered wake-up multiplies the interval by this (1.0–3.0).',
   backoffMaxTitle: 'Slow-down cap',
   backoffMaxDescription: 'The interval never stretches beyond this multiple of its base (1–10).',
+  sleepHintTitle: 'Sleep messages to the bot',
+  sleepHintDescription: 'One "go to sleep" at the start of the window and one "wake up" at the end, so the bot may lie down or stand up with pet_act. Edit the wording in data/rhythm/messages.json. Only active when a sleep window is set.',
+  wakeHintTitle: 'Tell the bot it was woken',
+  wakeHintDescription: 'When someone talks to it during the sleep window, a "you were woken up" line rides along with that turn; being grumpy is its own call. Dropped if it cannot join within 90 seconds, so it never shows up late.',
+  wakeGapTitle: 'Merge window for one interruption',
+  wakeGapDescription: 'Messages inside this many minutes count as one wake-up; a new one starts after that. 30 minutes by default.',
   knownChannelsTitle: 'Only the pet and console count as a person',
   knownChannelsDescription: 'Uses the old whitelist: only desktop-pet and console events count as "somebody came back". Messages from WeChat, QQ and other channels are ignored. Off by default: person-side events from every channel count.',
   activityIgnoreTitle: 'Event types that are not "somebody came back"',

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * 行为冒烟测试：不需要 Coopanion，用假宿主与假时钟驱动 World 的计时逻辑。
  *
@@ -15,8 +15,8 @@
  *
  *   npm run smoke   → 本文件
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -28,6 +28,7 @@ mkdirSync(SCRATCH_ROOT, { recursive: true });
 
 const { default: definition } = await import('../src/index.ts');
 const { stateFilePath } = await import('../src/state.ts');
+const { messagesPath } = await import('../src/messages.ts');
 const windows = await import('../src/windows.ts');
 const { fakeWorldContext } = await import('cortico/extensions/dry-mount.ts');
 const { nullLogger } = await import('cortico/core/util.ts');
@@ -80,6 +81,8 @@ function harness(cfgOverrides = {}, opts = {}) {
   const world = definition.create(ctx);
   const events = [];
   const pushes = [];
+  const hints = [];
+  const archived = [];
   const host = {
     store: {
       get: () => undefined,
@@ -95,9 +98,17 @@ function harness(cfgOverrides = {}, opts = {}) {
     },
     log: nullLogger(),
     modelFacts: { model: () => 'test-model', accepts: () => true, contextWindow: () => undefined },
-    pushDeferred: (spec, opts2) => pushes.push({ spec, opts: opts2 }),
+    pushDeferred: (spec, opts2) => {
+      // 睡眠提示与叫醒分开收：旧用例只关心叫醒，新用例单独看 hints。
+      if (spec.type === 'rhythm.hint') hints.push({ spec, opts: opts2 });
+      else pushes.push({ spec, opts: opts2 });
+    },
+    pushEvent: async (event, opts2) => {
+      archived.push({ event, opts: opts2 });
+      return event;
+    },
   };
-  return { world, host, events, pushes, dir, cfg };
+  return { world, host, events, pushes, hints, archived, dir, cfg };
 }
 
 /** 启动但接管定时器：真实 5 秒周期关掉，由测试手动 tick()。 */
@@ -136,6 +147,9 @@ console.log('config defaults:');
   check('dailyCap defaults to 12', d.dailyCap === 12);
   check('backoff is off by default', d.backoffAfter === 0);
   check('skipChance defaults to 0', d.skipChance === 0);
+  check('sleepHint defaults on', d.sleepHint === true);
+  check('wakeHint defaults on', d.wakeHint === true);
+  check('wakeGapMinutes defaults to 30', d.wakeGapMinutes === 30);
 }
 
 // ── 1. 安静计时与第一次叫醒 ────────────────────────────────────────────────
@@ -757,6 +771,168 @@ console.log('broken window settings:');
   h.world.tick();
   check('invalid windows fall back to no window', h.pushes.length === 1);
   check('invalid windows yield an empty list', h.world.sleepWindows.length === 0 && h.world.restWindows.length === 0);
+  await h.world.stop();
+}
+
+// ── 25. 睡眠提示与「被吵醒」 ─────────────────────────────────────────────
+console.log('sleep messages:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h);
+  check('no hint before the window starts', h.hints.length === 0);
+
+  advance(10); // 22:00
+  h.world.tick();
+  check('bedtime hint is sent once', h.hints.length === 1 && h.hints[0].spec.meta.kind === 'sleep');
+  check('bedtime hint carries the local time', String(h.hints[0].spec.render()).includes('22:00'));
+  check('bedtime hint uses flush', h.hints[0].opts?.trigger === 'flush');
+
+  advance(9 * 60); // 07:00
+  h.world.tick();
+  check('no wake hint while still asleep', h.hints.length === 1);
+
+  at('2026-11-03T08:00:00+08:00');
+  h.world.tick();
+  check('wake hint is sent at the end of the window', h.hints.length === 2 && h.hints[1].spec.meta.kind === 'wake');
+  check('the bedtime hint is not repeated', h.hints.filter((x) => x.spec.meta.kind === 'sleep').length === 1);
+  await h.world.stop();
+}
+
+console.log('sleep hints can be turned off:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00', sleepHint: false });
+  await boot(h);
+  advance(10);
+  h.world.tick();
+  at('2026-11-03T08:00:00+08:00');
+  h.world.tick();
+  check('no sleep or wake hint when sleepHint is off', h.hints.length === 0);
+  await h.world.stop();
+
+  const none = harness({ sleepWindow: '' });
+  await boot(none);
+  advance(10);
+  none.world.tick();
+  check('no hints without a sleep window', none.hints.length === 0);
+  await none.world.stop();
+}
+
+console.log('a restart inside the window does not re-send the bedtime hint:');
+{
+  at('2026-11-02T22:10:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h);
+  h.world.tick();
+  check('no bedtime hint on a late start', h.hints.length === 0);
+  const h2 = harness(h.cfg, { dir: h.dir });
+  await boot(h2);
+  h2.world.tick();
+  check('still none after a restart', h2.hints.length === 0);
+  await h.world.stop();
+  await h2.world.stop();
+}
+
+console.log('counting wake-ups:');
+{
+  at('2026-11-02T22:05:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00', wakeGapMinutes: 30 });
+  await boot(h);
+  h.world.tick();
+
+  advance(1);
+  addEvent(h, 'qq.message');
+  h.world.tick();
+  check('the first interruption counts once', h.world.state.sleep.wokeCount === 1);
+  check('one archived woke event', h.archived.filter((x) => x.event.type === 'rhythm.woke').length === 1);
+  check('the archived record is not delivered', h.archived[0].opts?.deliver === false);
+  check('a woken hint is queued', h.hints.filter((x) => x.spec.meta.kind === 'woken').length === 1);
+  check('the woken hint rides on piggyback', h.hints[0].opts?.trigger === 'piggyback');
+
+  advance(10); // 同一场聊天，30 分钟内
+  addEvent(h, 'clawbridge.message');
+  h.world.tick();
+  check('more messages in the same burst do not count again', h.world.state.sleep.wokeCount === 1);
+
+  advance(25); // 累计 35 分钟
+  addEvent(h, 'desktop-pet.message');
+  h.world.tick();
+  check('a new burst counts again', h.world.state.sleep.wokeCount === 2);
+  check('the source of the last wake-up is recorded', h.world.state.sleep.lastWokeBy === 'desktop-pet.message');
+
+  advance(60);
+  addEvent(h, 'coopanion.alarm', { origin: 'internal' });
+  addEvent(h, 'desktop-pet.self');
+  h.world.tick();
+  check('internal and self events are not wake-ups', h.world.state.sleep.wokeCount === 2);
+  await h.world.stop();
+}
+
+console.log('the woken hint expires:');
+{
+  at('2026-11-02T22:05:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h);
+  h.world.tick();
+  advance(1);
+  addEvent(h, 'qq.message');
+  h.world.tick();
+  const hint = h.hints.find((x) => x.spec.meta.kind === 'woken');
+  check('a fresh woken hint renders', typeof hint.spec.render() === 'string');
+  check('its text names the source', String(hint.spec.render()).includes('qq.message'));
+  advance(2);
+  check('the woken hint is dropped after 90 seconds', hint.spec.render() === null);
+  await h.world.stop();
+}
+
+console.log('wakeHint can be turned off:');
+{
+  at('2026-11-02T22:05:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00', wakeHint: false });
+  await boot(h);
+  h.world.tick();
+  advance(1);
+  addEvent(h, 'qq.message');
+  h.world.tick();
+  check('the wake-up is still counted', h.world.state.sleep.wokeCount === 1);
+  check('no woken hint when wakeHint is off', h.hints.length === 0);
+  await h.world.stop();
+}
+
+console.log('editable messages file:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  const file = messagesPath(join(h.dir, 'deployment', 'data'));
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ version: 1, zh: { sleep: 'CUSTOM {at} 该睡了' } }), 'utf8');
+  await boot(h);
+  advance(10);
+  h.world.tick();
+  check('custom wording is used', String(h.hints[0]?.spec.render()).includes('CUSTOM'));
+  await h.world.stop();
+
+  const fresh = harness();
+  await boot(fresh);
+  check('a default template is created on first run', existsSync(messagesPath(join(fresh.dir, 'deployment', 'data'))));
+  await fresh.world.stop();
+}
+
+console.log('public status file:');
+{
+  at('2026-11-02T22:30:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h);
+  h.world.tick();
+  advance(1);
+  addEvent(h, 'clawbridge.message');
+  h.world.tick();
+  const status = JSON.parse(readFileSync(join(h.dir, 'deployment', 'data', 'rhythm', 'status.json'), 'utf8'));
+  check('status says the bot is asleep', status.sleep.active === true);
+  check('status reports when the window ends', status.sleep.endsAt === '08:00');
+  check('status reports the wake-up count', status.sleep.wokeCount === 1);
+  check('status reports who woke it', status.sleep.lastWokeBy === 'clawbridge.message');
   await h.world.stop();
 }
 

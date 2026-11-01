@@ -14,7 +14,7 @@ import { RHYTHM_DEFAULTS, RHYTHM_ID, type RhythmConfigSection } from './config.t
 import { modelLanguageOfConfigFile } from './model-text.ts';
 import { RhythmWorld } from './world.ts';
 
-/** 自描述：没有工具，只推出叫醒事件。供扩展页与扩展市场阅读，不进提示词。 */
+/** 自描述：没有工具，只推出叫醒与睡眠提示两类事件。供扩展页与扩展市场阅读，不进提示词。 */
 const DESCRIBE: WorldDescribe = {
   tools: [],
   events: [
@@ -25,6 +25,21 @@ const DESCRIBE: WorldDescribe = {
         en: 'After the configured quiet time the app wakes the bot with a rhythm line; whether to speak or act is the bot\'s own call.',
       },
       trigger: 'flush',
+    },
+    {
+      type: 'rhythm.hint',
+      description: {
+        zh: '睡眠时段给 Coo 的提示：入睡（该睡了）、醒来（该醒了），以及被吵醒时的兜底提示。文案可在 data/rhythm/messages.json 里改。',
+        en: 'Sleep-window lines for the bot: bedtime, wake-up, and a best-effort "you were woken" hint. Wording lives in data/rhythm/messages.json.',
+      },
+      trigger: 'flush',
+    },
+    {
+      type: 'rhythm.woke',
+      description: {
+        zh: '睡眠时段里被人打扰时留档的一条记录（只入库、不投递），供其他插件按时间轴读取「被吵醒」事件。',
+        en: 'An archived record of a person waking the bot during its sleep window (stored, never delivered) so other plugins can read the wake-ups.',
+      },
     },
   ],
 };

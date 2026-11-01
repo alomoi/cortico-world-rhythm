@@ -110,7 +110,7 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 
 ---
 
-## 4. 当前行为（0.3.0 P0 + P1）
+## 4. 当前行为（0.3.0 P0 + P1 + P2）
 
 > 行号会漂，所以「代码位置」写函数/文件，不再写绝对行号。
 
@@ -134,6 +134,11 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 | 渲染期限 | `core/loop.ts:243`、`846-855` | `render()` 超过 3 秒、抛错或返回 `null` 都等于这条事件不存在 |
 | 排队作废 | `world.ts › queuedNudgeCancelled` | 人回来了、或已进入睡眠/休息时段 → 返回 `null` 并回退计数 |
 | 状态灯/徽标 | `world.ts › lampInfo`、`ui-text.ts` | 灯里给时段/倒计时/上限/今日次数；徽标给今日次数 |
+| 睡眠提示 | `world.ts › enterWindow` / `leaveWindow` / `sendHint` | 「该睡了」用 flush；「该醒了」在离开时段时发；文案来自 `messages.json` |
+| 「被吵醒」计数 | `world.ts › countWakes` | 睡眠时段内人侧事件，按 `wakeGapMinutes` 合并；计一次推一条归档 `rhythm.woke` |
+| 被吵醒提示 | `world.ts › sendHint('woken')` | `piggyback`（只搭车不发车），超过 90 秒 `render` 返回 null |
+| 提示文案文件 | `messages.ts` | `<dataDir>/rhythm/messages.json`，缺失时生成默认模板，永不覆盖；占位符 `{at}/{by}/{count}` |
+| 公开状态 | `world.ts › writeStatus` | `<dataDir>/rhythm/status.json`：`sleep.active/endsAt/wokeCount/lastWokeBy`、`today.nudges/cap` |
 | 叫醒正文 | `model-text.ts` | 中文/英文两版，开头带 `HH:MM`；语言读部署 `config.json` 的 `language` |
 | 工具 | `index.ts`、`world.ts › tools` | 没有工具（`tools(): []`） |
 
@@ -187,9 +192,26 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 6. **jitter 语义固定下来**：`基准 × (1 + random × jitter)`，只往后偏、每个间隔重掷、不落盘；
    与退避是乘法叠加（`基准 × 退避 × (1+随机)`）。测试用 `jitter: 0` 保证确定性。
 
-**本地验证**：`smoke.mjs` 124 条断言全绿，覆盖 P0 全部内容 + 时段解析（跨午夜/坏条目/多段）、
-睡眠与休息阻断、睡醒重新计时、排队跨时段作废、每日上限与 maxRounds 先到者、退避时间表
-（15/40/65/115/215 分钟）与说话复位、概率跳过、坏时段配置。
+### P2 具体改动（2026-11-01）
+
+1. **两条睡眠提示**（`sleepHint`，缺省开）：进入睡眠时段发「该睡了」，离开时发「该醒了」；
+   都走 `pushDeferred` + flush，正文建议 Coo 用 `pet_act` 的 `sleep` / `stand` 动作。
+   只在启用了睡眠时段时生效；每夜各最多一条（`nightKey` 落盘，重启不重发）。
+2. **可编辑文案**（`src/messages.ts`）：`<dataDir>/rhythm/messages.json`，首次运行生成默认模板，
+   **永不覆盖**；三句（sleep/wake/woken），占位符 `{at}/{by}/{count}`；坏文件退回默认并只 warn 一次。
+3. **「被吵醒」计数**（`wakeGapMinutes`，缺省 30）：睡眠时段内的人侧事件按间隔合并计一次；
+   判定与「有人回来了」完全同一套（internal 与 `*.self` 天然不计，灰区用 `activityIgnore`）。
+   每计一次推一条归档事件 `rhythm.woke`（`deliver:false`）。
+4. **兜底提示**（`wakeHint`，缺省开）：`piggyback` 投递，只搭着正在进行的这一轮走；
+   `render()` 里超过 90 秒返回 `null`——不会在对话结束很久后突然冒出「你被吵醒了」。
+   为什么不用 flush：见 `p2-sleep-design.md` §3（会多一次模型调用且可能迟到）。
+5. **公开状态**（`status.json`）：`sleep.active/endsAt/wokeCount/lastWokeAt/lastWokeBy`、
+   `today.nudges/cap`，原子写；供微信桥等插件读取，不含敏感字段。
+
+**本地验证**：`smoke.mjs` 158 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
+睡眠阻断与重新计时、排队作废、每日上限、退避时间表、概率跳过、重启续算、坏文件、
+**两条睡眠提示、重启不重发、被吵醒合并计数（30 分钟）、内部/自录不计、piggyback 与 90 秒过期、
+自定义文案、status.json 内容**。
 **尚未真机验证**（需要装包）：见第 6 节末尾的清单。
 
 ---
@@ -231,6 +253,14 @@ cd D:\文档\deepseek-harness\default-workspace\selftalk
    并且窗口内没有 `作息:叫醒 Coo`；窗口结束后出现 `作息:休息结束，安静计时重新开始`。
 9. **坏配置不致命**：把 `sleepWindow` 写成 `25:00-08:00`，日志出现 `作息:时段设置有问题` 的 warn，World 照常运行。
 10. **每日上限**：把 `dailyCap` 调到 1，观察第二次不再叫、灯里出现「今日已达上限」。
+11. **睡眠提示真的发出去**：把 `sleepWindow` 设成「现在 + 2 分钟」到「现在 + 10 分钟」，
+    看日志 `作息:进入睡眠时段`（`hint: sent`），并确认桌宠真的自己躺下了（`pet_act sleep` 生效）；
+    再把窗口结束时间调到 +12 分钟，确认出现 `作息:睡眠时段结束` 与「该醒了」提示。
+12. **被吵醒**：睡眠时段里往桌宠气泡发一句话，看 `作息:被吵醒`（`by: desktop-pet.message`、
+    `wokeCount: 1`）；30 分钟内再发几条，`wokeCount` 不变；`status.json` 里 `sleep.wokeCount` 同步。
+13. **文案热改**：编辑 `data\home\companion\data\rhythm\messages.json` 改一句话，下一条提示即生效（无需重启）。
+14. **兜底提示不迟到**：睡眠时段里发消息后隔 3 分钟再看，日志里不应出现新的一轮「被吵醒」提示
+    （`piggyback` 的 90 秒保鲜期应已把它作废）。
 
 ---
 

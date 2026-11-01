@@ -48,6 +48,21 @@
 - 状态灯新增时段/上限提示；新增日志 `作息:进入睡眠时段`、`作息:休息结束，安静计时重新开始`、
   `作息:排队的叫醒已作废`。
 
+### P2：睡眠表现与「被吵醒」
+
+- **两条睡眠提示**（`sleepHint`，缺省开）：进入睡眠时段发「该睡了」、离开时发「该醒了」，
+  正文建议 Coo 用 `pet_act` 的 `sleep` / `stand` 动作；只在启用睡眠时段时生效，每夜各一条。
+- **可编辑文案**：`<dataDir>/rhythm/messages.json`，首次运行生成默认模板，之后不会被覆盖；
+  三句（sleep/wake/woken），占位符 `{at}` / `{by}` / `{count}`；坏文件退回默认并只 warn 一次。
+- **「被吵醒」计数**（`wakeGapMinutes`，缺省 30）：睡眠时段内的人侧事件按间隔合并计一次；
+  internal 与 `*.self`（软件唤醒、Coo 自己的动作）天然不计，灰区用 `activityIgnore` 排除。
+  每计一次推一条归档事件 `rhythm.woke`（`deliver: false`）。
+- **兜底提示**（`wakeHint`，缺省开）：`piggyback` 只搭着正在进行的那一轮，90 秒内没搭上车就作废，
+  不会在对话结束后突然冒出「你被吵醒了」。
+- **公开状态**：`<dataDir>/rhythm/status.json`（`sleep.active/endsAt/wokeCount/lastWokeAt/lastWokeBy`、
+  `today.nudges/cap`），原子写，供其他插件读取；不含敏感字段。
+- `describe.json` 新增 `rhythm.hint` 与 `rhythm.woke` 两个事件声明。
+
 ## 0.2.2
 
 - 包简介换成中文（npm 页面与扩展市场显示）。

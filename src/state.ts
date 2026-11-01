@@ -28,6 +28,24 @@ export interface RhythmState {
   lastOutcome: 'delivered' | 'discarded' | null;
   /** 上一次结果发生的时刻（ISO）。 */
   lastOutcomeAt: string | null;
+  /** 这一夜的睡眠会话：跨重启保留，避免重启后又发一遍「该睡了」。 */
+  sleep: SleepSession;
+}
+
+/** 一夜的睡眠会话。`nightKey` 是睡眠时段开始那天的日期。 */
+export interface SleepSession {
+  nightKey: string | null;
+  /** 这一夜是否已经投过「该睡了」。 */
+  sleepHintSent: boolean;
+  /** 这一夜是否已经投过「该醒了」。 */
+  wakeHintSent: boolean;
+  /** 这一夜被吵醒几次（按合并间隔计）。 */
+  wokeCount: number;
+  /** 上一次被吵醒的时刻（ISO）与来源事件类型。 */
+  lastWokeAt: string | null;
+  lastWokeBy: string | null;
+  /** 上一次「计数过」的打扰时刻；用来合并同一场聊天。 */
+  lastCountedAt: string | null;
 }
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -52,6 +70,18 @@ export function localDayKey(timezone: string, at: number): string {
   return `${pick('year')}-${pick('month')}-${pick('day')}`;
 }
 
+function emptySleep(): SleepSession {
+  return {
+    nightKey: null,
+    sleepHintSent: false,
+    wakeHintSent: false,
+    wokeCount: 0,
+    lastWokeAt: null,
+    lastWokeBy: null,
+    lastCountedAt: null,
+  };
+}
+
 function emptyState(dayKey: string): RhythmState {
   return {
     version: 1,
@@ -61,6 +91,7 @@ function emptyState(dayKey: string): RhythmState {
     lastNudgeAt: null,
     lastOutcome: null,
     lastOutcomeAt: null,
+    sleep: emptySleep(),
   };
 }
 
@@ -69,6 +100,22 @@ const countOf = (value: unknown): number =>
 
 const isoOf = (value: unknown): string | null =>
   typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : null;
+
+const boolOf = (value: unknown): boolean => value === true;
+
+function sleepOf(value: unknown): SleepSession {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return emptySleep();
+  const bag = value as Record<string, unknown>;
+  return {
+    nightKey: typeof bag.nightKey === 'string' ? bag.nightKey : null,
+    sleepHintSent: boolOf(bag.sleepHintSent),
+    wakeHintSent: boolOf(bag.wakeHintSent),
+    wokeCount: countOf(bag.wokeCount),
+    lastWokeAt: isoOf(bag.lastWokeAt),
+    lastWokeBy: typeof bag.lastWokeBy === 'string' ? bag.lastWokeBy : null,
+    lastCountedAt: isoOf(bag.lastCountedAt),
+  };
+}
 
 /**
  * 读状态。文件不存在是正常情况（第一次运行），不报错。
@@ -102,6 +149,7 @@ export function loadState(file: string, dayKey: string): { state: RhythmState; e
     lastNudgeAt: isoOf(bag.lastNudgeAt),
     lastOutcome: bag.lastOutcome === 'delivered' || bag.lastOutcome === 'discarded' ? bag.lastOutcome : null,
     lastOutcomeAt: isoOf(bag.lastOutcomeAt),
+    sleep: sleepOf(bag.sleep),
   };
   if (state.dayKey !== dayKey) {
     state.dayKey = dayKey;
@@ -110,15 +158,20 @@ export function loadState(file: string, dayKey: string): { state: RhythmState; e
   return { state };
 }
 
-/** 写状态；原子替换，失败只返回文案（调用方记日志，不抛）。 */
-export function saveState(file: string, state: RhythmState): { error?: string } {
+/** 原子写一份 JSON（临时文件 + rename）；失败只返回文案。 */
+export function writeJsonAtomic(file: string, value: unknown): { error?: string } {
   try {
     mkdirSync(dirname(file), { recursive: true });
     const tmp = `${file}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+    writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
     renameSync(tmp, file);
     return {};
   } catch (error) {
     return { error: message(error) };
   }
+}
+
+/** 写状态；原子替换，失败只返回文案（调用方记日志，不抛）。 */
+export function saveState(file: string, state: RhythmState): { error?: string } {
+  return writeJsonAtomic(file, state);
 }

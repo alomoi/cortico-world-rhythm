@@ -35,6 +35,12 @@ export interface RhythmConfigSection extends WorldSection {
   backoffMaxFactor: number;
   /** 到点按概率跳过这一次（0–1）。预留：这版不进配置组，留 0 即关闭。 */
   skipChance: number;
+  /** 睡眠时段的「该睡了 / 该醒了」两条提示。 */
+  sleepHint: boolean;
+  /** 睡眠时段被叫醒时，兜底给 Coo 一条「你被吵醒了」的提示（piggyback，迟到作废）。 */
+  wakeHint: boolean;
+  /** 同一场打扰的合并间隔：超过它再有人来才算「又被吵醒一次」。 */
+  wakeGapMinutes: number;
   /**
    * 只用桌宠与控制台的旧白名单判断「有人回来了」。
    * false（缺省）= 任何渠道的人侧事件都算：微信、QQ、B 站、Discord 等扩展都自动生效。
@@ -60,6 +66,9 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   backoffFactor: 1.5,
   backoffMaxFactor: 4,
   skipChance: 0,
+  sleepHint: true,
+  wakeHint: true,
+  wakeGapMinutes: 30,
   knownChannelsOnly: false,
   activityIgnore: '',
   onlyWhenIdle: true,
@@ -150,6 +159,26 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           description: t.backoffMaxDescription,
           minimum: 1,
           maximum: 10,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.sleepHint`]: {
+          type: 'boolean',
+          title: t.sleepHintTitle,
+          description: t.sleepHintDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.wakeHint`]: {
+          type: 'boolean',
+          title: t.wakeHintTitle,
+          description: t.wakeHintDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.wakeGapMinutes`]: {
+          type: 'integer',
+          title: t.wakeGapTitle,
+          description: t.wakeGapDescription,
+          minimum: 1,
+          maximum: 240,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.knownChannelsOnly`]: {
