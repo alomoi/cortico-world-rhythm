@@ -21,6 +21,20 @@ export interface RhythmConfigSection extends WorldSection {
   maxRounds: number;
   /** 间隔的随机浮动比例（0–0.5）：实际间隔 = 基准 × (1 + 随机 × jitter)。 */
   jitter: number;
+  /** 睡眠时段，`HH:MM-HH:MM`；留空表示不启用。结束 ≤ 开始表示跨午夜。 */
+  sleepWindow: string;
+  /** 休息时段，可写多个，逗号分隔；留空表示没有。 */
+  restWindows: string;
+  /** 一天（部署时区）最多叫醒几次；0 表示不限。 */
+  dailyCap: number;
+  /** 连续几次没人理之后开始拉长间隔；0 表示不启用退避。 */
+  backoffAfter: number;
+  /** 每多一次没人回应，再次叫醒的间隔乘多少（1.0–3.0）。 */
+  backoffFactor: number;
+  /** 间隔最多拉长到基准的多少倍（1–10）。 */
+  backoffMaxFactor: number;
+  /** 到点按概率跳过这一次（0–1）。预留：这版不进配置组，留 0 即关闭。 */
+  skipChance: number;
   /**
    * 只用桌宠与控制台的旧白名单判断「有人回来了」。
    * false（缺省）= 任何渠道的人侧事件都算：微信、QQ、B 站、Discord 等扩展都自动生效。
@@ -39,6 +53,13 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   repeatMinutes: 25,
   maxRounds: 0,
   jitter: 0.2,
+  sleepWindow: '22:00-08:00',
+  restWindows: '',
+  dailyCap: 12,
+  backoffAfter: 0,
+  backoffFactor: 1.5,
+  backoffMaxFactor: 4,
+  skipChance: 0,
   knownChannelsOnly: false,
   activityIgnore: '',
   onlyWhenIdle: true,
@@ -85,6 +106,50 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           description: t.jitterDescription,
           minimum: 0,
           maximum: 0.5,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.sleepWindow`]: {
+          type: 'string',
+          title: t.sleepTitle,
+          description: t.sleepDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.restWindows`]: {
+          type: 'string',
+          title: t.restTitle,
+          description: t.restDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.dailyCap`]: {
+          type: 'integer',
+          title: t.dailyCapTitle,
+          description: t.dailyCapDescription,
+          minimum: 0,
+          maximum: 200,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.backoffAfter`]: {
+          type: 'integer',
+          title: t.backoffAfterTitle,
+          description: t.backoffAfterDescription,
+          minimum: 0,
+          maximum: 50,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.backoffFactor`]: {
+          type: 'number',
+          title: t.backoffFactorTitle,
+          description: t.backoffFactorDescription,
+          minimum: 1,
+          maximum: 3,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.backoffMaxFactor`]: {
+          type: 'number',
+          title: t.backoffMaxTitle,
+          description: t.backoffMaxDescription,
+          minimum: 1,
+          maximum: 10,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.knownChannelsOnly`]: {

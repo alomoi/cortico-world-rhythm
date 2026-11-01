@@ -28,6 +28,7 @@ mkdirSync(SCRATCH_ROOT, { recursive: true });
 
 const { default: definition } = await import('../src/index.ts');
 const { stateFilePath } = await import('../src/state.ts');
+const windows = await import('../src/windows.ts');
 const { fakeWorldContext } = await import('cortico/extensions/dry-mount.ts');
 const { nullLogger } = await import('cortico/core/util.ts');
 
@@ -56,6 +57,14 @@ const NEW_CASE_DEFAULTS = {
   repeatMinutes: 25,
   maxRounds: 0,
   jitter: 0,
+  // 时段与节制在旧用例里默认关掉，保持确定性；专门用例会显式打开。
+  sleepWindow: '',
+  restWindows: '',
+  dailyCap: 0,
+  backoffAfter: 0,
+  backoffFactor: 1.5,
+  backoffMaxFactor: 4,
+  skipChance: 0,
   knownChannelsOnly: false,
   activityIgnore: '',
   // 大多数用例只想验时间逻辑，默认把空闲门控关掉；门控另有专门用例。
@@ -110,6 +119,8 @@ function addEvent(h, type, { origin = 'external', at = clock } = {}) {
 }
 
 const advance = (minutes) => { clock += minutes * MINUTE; };
+/** 把假时钟拨到某一天某个时刻（带 +08:00 偏移的 ISO 写法）。 */
+const at = (time) => { clock = Date.parse(time); };
 const iso = (at) => new Date(at).toISOString();
 const readState = (h) => JSON.parse(readFileSync(stateFilePath(join(h.dir, 'deployment', 'data')), 'utf8'));
 
@@ -120,6 +131,11 @@ console.log('config defaults:');
   check('onlyWhenIdle defaults on', d.onlyWhenIdle === true);
   check('knownChannelsOnly defaults off', d.knownChannelsOnly === false);
   check('activityIgnore defaults empty', d.activityIgnore === '');
+  check('sleep window defaults to 22:00-08:00', d.sleepWindow === '22:00-08:00');
+  check('rest windows default empty', d.restWindows === '');
+  check('dailyCap defaults to 12', d.dailyCap === 12);
+  check('backoff is off by default', d.backoffAfter === 0);
+  check('skipChance defaults to 0', d.skipChance === 0);
 }
 
 // ── 1. 安静计时与第一次叫醒 ────────────────────────────────────────────────
@@ -495,6 +511,253 @@ console.log('quietMinutes 0 and jitter:');
   const factor = j.world.jitterFactor;
   check('jitter factor within 1–1.5', factor >= 1 && factor <= 1.5, String(factor));
   await j.world.stop();
+}
+
+// ── 18. 时段解析（纯函数） ────────────────────────────────────────────────
+console.log('window parsing:');
+{
+  check('parses HH:MM', windows.parseClock('22:00') === 22 * 60);
+  check('parses single-digit hour', windows.parseClock('9:05') === 9 * 60 + 5);
+  check('rejects 24:00', windows.parseClock('24:00') === null);
+  check('rejects nonsense', windows.parseClock('abc') === null);
+  check('formats back to HH:MM', windows.formatClock(8 * 60) === '08:00');
+
+  const sleep = windows.parseWindow('22:00-08:00');
+  check('parses a wrapping window', sleep !== null && sleep.start === 1320 && sleep.end === 480);
+
+  check('23:30 is inside 22:00-08:00', windows.inWindow(23 * 60 + 30, sleep) === true);
+  check('00:30 is inside 22:00-08:00', windows.inWindow(30, sleep) === true);
+  check('07:59 is inside 22:00-08:00', windows.inWindow(7 * 60 + 59, sleep) === true);
+  check('08:00 is outside (end is exclusive)', windows.inWindow(8 * 60, sleep) === false);
+  check('12:00 is outside', windows.inWindow(12 * 60, sleep) === false);
+
+  const list = windows.parseWindowList('12:30-14:00, 18:00-18:30');
+  check('parses several rest windows', list.windows.length === 2 && list.errors.length === 0);
+  check('splits on semicolons and newlines too', windows.parseWindowList('12:30-14:00; 18:00-18:30\n20:00-20:10').windows.length === 3);
+  check('empty string means none', windows.parseWindowList('').windows.length === 0);
+  const bad = windows.parseWindowList('12:30-14:00, 25:00-26:00');
+  check('bad entries are skipped with an error', bad.windows.length === 1 && bad.errors.length === 1);
+  check('start === end is rejected', windows.parseWindowList('12:00-12:00').errors.length === 1);
+  check('minutes until end handles wrap', windows.minutesUntilWindowEnd(23 * 60 + 30, sleep) === 8 * 60 + 30);
+}
+
+// ── 19. 睡眠时段：不叫醒、跨午夜、睡醒重新计时 ──────────────────────────
+console.log('sleep window:');
+{
+  at('2026-11-02T21:00:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h);
+  advance(20);
+  h.world.tick();
+  check('nudges normally before the sleep window', h.pushes.length === 1);
+
+  advance(70); // 22:30
+  h.world.tick();
+  check('no nudge during the sleep window', h.pushes.length === 1);
+  const lamp = h.world.webUi('zh').lamps[0];
+  check('lamp reports the sleep window', lamp.hint.includes('睡眠时段') && lamp.hint.includes('08:00'), lamp.hint);
+
+  at('2026-11-02T23:50:00+08:00');
+  const h2 = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h2);
+  advance(40); // 00:30
+  h2.world.tick();
+  check('a wrap-past-midnight window blocks at 00:30', h2.pushes.length === 0);
+  await h.world.stop();
+  await h2.world.stop();
+}
+
+console.log('waking up resets the quiet clock:');
+{
+  at('2026-11-02T07:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h);
+  h.world.tick();
+  check('still asleep at 07:50', h.pushes.length === 0);
+
+  at('2026-11-02T08:00:00+08:00');
+  h.world.tick();
+  check('no nudge right at the end of the window', h.pushes.length === 0);
+  advance(14);
+  h.world.tick();
+  check('no nudge 14 minutes after waking', h.pushes.length === 0);
+  advance(1);
+  h.world.tick();
+  check('nudges 15 minutes after waking', h.pushes.length === 1);
+  await h.world.stop();
+}
+
+console.log('a queued nudge is cancelled when the window starts:');
+{
+  at('2026-11-02T21:40:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  check('nudge queued at 21:55', h.pushes.length === 1);
+  advance(5); // 22:00，进入睡眠时段
+  check('queued nudge renders to null in the window', h.pushes[0].spec.render() === null);
+  check('cancelled nudge is rolled back', h.world.state.nudgesToday === 0);
+  await h.world.stop();
+}
+
+// ── 20. 休息时段：默认关、可开、可写多个 ─────────────────────────────────
+console.log('rest windows:');
+{
+  at('2026-11-02T12:31:00+08:00');
+  const off = harness({ restWindows: '' });
+  await boot(off);
+  advance(15);
+  off.world.tick();
+  check('no rest window configured: nudges as usual', off.pushes.length === 1);
+  await off.world.stop();
+
+  at('2026-11-02T12:31:00+08:00');
+  const on = harness({ restWindows: '12:30-14:00' });
+  await boot(on);
+  advance(60);
+  on.world.tick();
+  check('no nudge during a rest window', on.pushes.length === 0);
+  check('lamp reports the rest window', on.world.webUi('zh').lamps[0].hint.includes('休息时段'));
+
+  const multi = harness({ restWindows: '12:30-14:00, 18:00-18:30' });
+  await boot(multi);
+  check('several rest windows are accepted', multi.world.restWindows.length === 2, String(multi.world.restWindows.length));
+
+  at('2026-11-02T18:21:00+08:00');
+  const second = harness({ restWindows: '12:30-14:00, 18:00-18:30' });
+  await boot(second);
+  advance(8);
+  second.world.tick();
+  check('the second rest window also blocks', second.pushes.length === 0);
+
+  advance(1); // 18:30
+  second.world.tick();
+  advance(15);
+  second.world.tick();
+  check('nudges 15 minutes after the second rest ends', second.pushes.length === 1);
+  await on.world.stop();
+  await multi.world.stop();
+  await second.world.stop();
+}
+
+// ── 21. 每日上限 ──────────────────────────────────────────────────────────
+console.log('daily cap:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ dailyCap: 2 });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  advance(25);
+  h.world.tick();
+  advance(25);
+  h.world.tick();
+  check('stops at the daily cap', h.pushes.length === 2, `${h.pushes.length}`);
+  const lamp = h.world.webUi('zh').lamps[0];
+  check('lamp reports the daily cap', lamp.hint.includes('今日已达上限 2 次'), lamp.hint);
+  check('badge shows the capped count', h.world.webUi('zh').badges[0].value === 2);
+
+  at('2026-11-03T09:00:00+08:00');
+  h.world.tick();
+  check('the cap resets on a new day', h.pushes.length === 3 && h.world.state.nudgesToday === 1, `${h.pushes.length}/${h.world.state.nudgesToday}`);
+  await h.world.stop();
+}
+
+console.log('maxRounds and dailyCap, whichever comes first:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const roundsFirst = harness({ dailyCap: 5, maxRounds: 2 });
+  await boot(roundsFirst);
+  advance(15);
+  roundsFirst.world.tick();
+  advance(25);
+  roundsFirst.world.tick();
+  advance(25);
+  roundsFirst.world.tick();
+  check('maxRounds stops first', roundsFirst.pushes.length === 2);
+
+  const capFirst = harness({ dailyCap: 1, maxRounds: 5 });
+  await boot(capFirst);
+  advance(15);
+  capFirst.world.tick();
+  advance(25);
+  capFirst.world.tick();
+  check('dailyCap stops first', capFirst.pushes.length === 1);
+  await roundsFirst.world.stop();
+  await capFirst.world.stop();
+}
+
+// ── 22. 退避：越叫越稀，说话就恢复 ────────────────────────────────────────
+console.log('backoff:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 25, backoffAfter: 2, backoffFactor: 2, backoffMaxFactor: 4 });
+  await boot(h);
+  advance(15);
+  h.world.tick();   // 1 @ 15
+  advance(25);
+  h.world.tick();   // 2 @ 40
+  advance(25);
+  h.world.tick();   // 3 @ 65（rounds=2，尚未起算）
+  check('first three use the base interval', h.pushes.length === 3, `${h.pushes.length}`);
+
+  advance(49);
+  h.world.tick();   // 114
+  check('no nudge before the doubled interval ends', h.pushes.length === 3);
+  advance(1);
+  h.world.tick();   // 115 = 65 + 25×2
+  check('fourth is delayed by the backoff factor', h.pushes.length === 4, `${h.pushes.length}`);
+
+  advance(99);
+  h.world.tick();   // 214
+  check('fifth waits for the capped 4× interval', h.pushes.length === 4);
+  advance(1);
+  h.world.tick();   // 215
+  check('fifth fires at the cap', h.pushes.length === 5, `${h.pushes.length}`);
+
+  addEvent(h, 'qq.message');
+  h.world.tick();
+  check('speaking resets the backoff', h.world.rounds === 0);
+  advance(15);
+  h.world.tick();
+  check('after speaking it nudges on the base interval again', h.pushes.length === 6, `${h.pushes.length}`);
+  await h.world.stop();
+}
+
+// ── 23. 概率跳过（无 UI，默认关） ─────────────────────────────────────────
+console.log('skipChance:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ skipChance: 1 });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  check('a certain skip never nudges', h.pushes.length === 0);
+  advance(25);
+  h.world.tick();
+  check('still skipped on the next interval', h.pushes.length === 0);
+
+  const never = harness({ skipChance: 0 });
+  await boot(never);
+  advance(15);
+  never.world.tick();
+  check('skipChance 0 never skips', never.pushes.length === 1);
+  await h.world.stop();
+  await never.world.stop();
+}
+
+// ── 24. 坏时段不致命 ──────────────────────────────────────────────────────
+console.log('broken window settings:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ sleepWindow: '25:00-08:00', restWindows: 'nonsense' });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  check('invalid windows fall back to no window', h.pushes.length === 1);
+  check('invalid windows yield an empty list', h.world.sleepWindows.length === 0 && h.world.restWindows.length === 0);
+  await h.world.stop();
 }
 
 Date.now = realNow;
