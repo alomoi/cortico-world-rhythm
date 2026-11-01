@@ -1,5 +1,19 @@
 # 自主发言（Self-talk）— Coopanion 插件
 
+> **本目录是 fork，不是上游原样。**
+>
+> - 基线：`cortico-world-selftalk@0.2.2`（npm 最新版），源码取自已安装的扩展目录；上游 GitHub 本机连不上，无 git 历史。
+> - 版本：`0.3.0`（本 fork 自己的演进线）。
+> - 开发手册见 [`docs/dev-notes.md`](docs/dev-notes.md)，改进计划见 [`docs/fork-plan.md`](docs/fork-plan.md)。
+> - 本地验证（不需要启动 Coopanion）：
+>
+>   ```powershell
+>   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run.ps1 check.mjs
+>   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run.ps1 smoke.mjs
+>   ```
+>
+> 下面这段是上游原文，安装与配置方式仍然适用于本 fork。
+
 让 Coo 自己开口：安静一段时间后，插件会叫醒 Coo 一次，**开不开口、说什么、用哪些工具，全由 Coo 自己决定**。
 
 - 平时没人聊天时，Coo 像突然想起什么，主动在气泡里和对方说两句；

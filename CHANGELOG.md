@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0（本地 fork，未发布）
+
+- 从已安装的 `cortico-world-selftalk@0.2.2` 取源码作为 fork 基线（上游 GitHub 不可达，无历史）。
+- 新增本地开发脚手架，不需要启动 Coopanion：
+  - `scripts/run.ps1`：用 Coopanion 自带 Node + `tsx` + 框架解析钩子跑脚本（GUI 子系统程序的输出重定向已封装）。
+  - `scripts/check.mjs`：干装载检查（manifest / `defaults` / `create` / `tools` / `webUi` / 配置路径 / `describe.json` 一致性），`--write` 重新生成 `describe.json`。
+  - `scripts/smoke.mjs`：假宿主 + 假时钟的行为冒烟测试。
+- 新增 `docs/dev-notes.md`（环境与工作方式）与 `docs/fork-plan.md`（改进计划）。
+
 ## 0.2.2
 
 - 包简介换成中文（npm 页面与扩展市场显示）。
