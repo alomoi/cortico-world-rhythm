@@ -66,6 +66,38 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 - 配置段 `worlds.selftalk`，WebUI 改完立即生效（每个 5 秒检查周期现读）。
 - 默认 `enabled: false`，是否启用由 bot 声明与部署配置决定。
 
+### 本机当前部署（2026-11-01 读 `config.json`）
+
+| 项 | 值 |
+|---|---|
+| bot | `cormini`，显示名「小肥鱼」 |
+| 语言 | `zh` |
+| `worlds.selftalk` | **已启用**：`quietMinutes=30`、`repeatMinutes=45`、`maxRounds=3`、`jitter=0.2` |
+| 同时启用的其他 World | `websearch`、`devtools`、`clawbridge`（微信桥）、`localvision` 未设 |
+
+⚠️ `clawbridge` 已启用 —— 微信里的人和 Coo 说话**不会重置**自主发言的安静计时（见第 5 节第 1 条），
+这是真机上最容易犯的错，改代码时优先处理。
+
+### 真机日志佐证（`core.log`，2026-11-01）
+
+```
+[16:42:08] INFO  worlds.selftalk: 自言自语:叫醒 Coo
+[16:44:45] INFO  worlds.selftalk: 自言自语:叫醒 Coo
+[16:45:17] INFO  worlds.clawbridge: clawbridge: 已发送微信消息
+[16:45:19] INFO  worlds.clawbridge: clawbridge: 已发送微信消息
+[16:46:00] ERROR core.loop: 投递水位停滞:有该进上下文的外部事件长时间没被投递,水位没有推进
+[16:52:42] INFO  worlds.clawbridge: clawbridge: 已发送微信消息
+[16:52:44] INFO  worlds.clawbridge: clawbridge: 已发送微信消息
+[16:53:16] INFO  worlds.selftalk: 自言自语:叫醒 Coo     ← 微信对话进行中又叫醒了一次
+[16:54:02] INFO  worlds.clawbridge: clawbridge: 已发送微信消息
+```
+
+- 结论一：**微信对话进行中照样叫醒**（16:52 刚发完消息，16:53 就叫醒），白名单问题在真机上确实发生。
+- 结论二：叫醒后 1 分钟出现过一次「投递水位停滞」，随后自行解除（`caughtUp: 6`）。
+  目前没有证据把两者联系起来，但**改 flush 投递策略时要复现这条日志**，确认不会把外部事件堵在队列里。
+
+
+
 ---
 
 ## 4. 基线行为（0.2.2）逐条拆解
@@ -94,8 +126,10 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 ## 5. 基线里明确存在的问题（改进候选，按优先级）
 
 1. **只认两个渠道的人侧事件**：`ACTIVITY_TYPES` 硬编码 `desktop-pet.*` 与 `console.*`。
-   装了 `cortico-world-wechat-clawbridge` 之后，用户在微信里聊天**不会**重置安静计时，
-   插件会在人家正聊得热闹时插嘴。→ 应改成「任何非 self 的外部事件」或可配置渠道表。
+   微信桥推的是 `clawbridge.message`（`clawbridge/plugin/src/config.js:19`、`world.js:1019`），
+   不在白名单里 → 用户在微信里聊天**不会**重置安静计时，插件会在人家正聊得热闹时插嘴。
+   本机 `clawbridge` 与 `selftalk` 都已启用，这是真机问题。
+   → 应改成「任何非 self 的外部事件」或可配置渠道表。
 2. **叫醒是「定时闹钟」，不是「想起什么」**：每次正文一样，不看最近聊了什么；连续几次都没人理
    也照常按时叫。→ 需要内容感知 + 退避/自适应。
 3. **不持久化**：`rounds` / `lastNudgeAt` 全在内存里，重启进程就归零；「今天叫醒了几次」无从统计。

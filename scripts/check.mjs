@@ -14,7 +14,7 @@
  *   npm run check      → check.mjs
  *   npm run describe   → check.mjs --write
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -69,7 +69,7 @@ async function main() {
     [meta.api === 6, `cortico.api is ${meta.api}`],
     [typeof meta.displayName === 'string' && meta.displayName.length > 0, 'cortico.displayName is set'],
     [typeof meta.describe === 'string', 'cortico.describe points at a file'],
-    [!existsSync(join(ROOT, 'src', 'index.ts')) ? false : true, 'exports ./src/index.ts'],
+    [typeof pkg.exports?.['.'] === 'string' && pkg.exports['.'] === pkg.main, `exports ${pkg.exports?.['.'] ?? '(none)'}`],
   ];
   console.log('manifest:');
   for (const [condition, label] of manifestOk) {

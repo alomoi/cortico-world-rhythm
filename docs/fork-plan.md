@@ -36,6 +36,10 @@
 装了微信桥（`cortico-world-wechat-clawbridge`）后，用户在微信里聊得火热，插件仍在计时，
 到点就往会话里插一条「安静了 15 分钟」。
 
+**已证实**：微信桥每条来消息都推 `clawbridge.message`（`clawbridge/plugin/src/config.js:19` 定义，
+`world.js:1019` 投递，`origin` 缺省为 external），这个类型不在白名单里 → 微信聊天**不会**重置计时。
+本机 `clawbridge` 与 `selftalk` 同时启用，这个坑是真机上的。
+
 **做法**：活动判定从「类型白名单」改成「来源判定」——
 
 - 视为活动：`origin === 'external'` 且类型不在「Coo 自己说的话」集合里；
