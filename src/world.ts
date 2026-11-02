@@ -286,6 +286,8 @@ export class RhythmWorld implements World {
       quietSince: new Date(this.lastActivitySeen).toISOString(),
     });
 
+    // 启动即写一次状态与公开状态：这样 status.json 不用等第一次叫醒才出现。
+    this.persist();
     this.rollJitter();
     this.timer = setInterval(() => this.tick(), CHECK_EVERY_MS);
   }
