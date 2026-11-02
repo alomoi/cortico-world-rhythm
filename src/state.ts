@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 运行时状态的持久化。
  *
  * 为什么需要：上游把「这一段安静里已叫醒几次 / 上次叫醒在什么时候」全放在内存里，
@@ -22,6 +22,8 @@ export interface RhythmState {
   nudgesToday: number;
   /** 这一段安静里已叫醒几次。 */
   rounds: number;
+  /** 连续多少次「主动搭话」没人回应；退避用它，不再用叫醒次数。 */
+  unanswered: number;
   /** 上一次叫醒的时刻（ISO）；没有则 null。 */
   lastNudgeAt: string | null;
   /** 上一次叫醒的投递结果；没有则 null。 */
@@ -88,6 +90,7 @@ function emptyState(dayKey: string): RhythmState {
     dayKey,
     nudgesToday: 0,
     rounds: 0,
+    unanswered: 0,
     lastNudgeAt: null,
     lastOutcome: null,
     lastOutcomeAt: null,
@@ -146,6 +149,7 @@ export function loadState(file: string, dayKey: string): { state: RhythmState; e
     dayKey: typeof bag.dayKey === 'string' ? bag.dayKey : dayKey,
     nudgesToday: countOf(bag.nudgesToday),
     rounds: countOf(bag.rounds),
+    unanswered: countOf(bag.unanswered),
     lastNudgeAt: isoOf(bag.lastNudgeAt),
     lastOutcome: bag.lastOutcome === 'delivered' || bag.lastOutcome === 'discarded' ? bag.lastOutcome : null,
     lastOutcomeAt: isoOf(bag.lastOutcomeAt),

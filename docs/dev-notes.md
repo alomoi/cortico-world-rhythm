@@ -124,6 +124,8 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 | 时段内与离开时段 | `world.ts › tick` | 时段内直接返回；离开时把安静起点重置到当前时刻 |
 | 时间参数 | `world.ts › limits` | 全局四个 + 时段/上限/退避六个 |
 | 安静判定 | `world.ts › dueAt` / `backoffMultiplier` | 首次 `quiet × jitter`；再次 `repeat × 退避倍数 × jitter` |
+| 「搭话」判定 | `world.ts › outputTap` / `observeStream` / `isSpeakTool` | 看主会话流里的 `function_call` 名字是否在 `speakTools` 里（缺省 pet_say/pet_ask/console_send/clawbridge_send） |
+| 退避计数 | `world.ts › settleAttempt` | 只给「开了口又没人回」加一；安静结束/查资料不加；有人回话清零 |
 | 每日上限 | `world.ts › tick` | `dailyCap`，按部署时区自然日；复用 `nudgesToday` |
 | 概率跳过 | `world.ts › tick` | `skipChance`（无 UI，缺省 0），压制到下一个间隔 |
 | 叫醒投递 | `world.ts › nudge` | `pushDeferred(..., { trigger: 'flush' })`，`origin: 'internal'` |
@@ -185,8 +187,8 @@ $env:ELECTRON_RUN_AS_NODE = '1'
    空 = 不启用。时段内 `tick` 直接返回；离开时段把安静起点重置到当前时刻。
 2. **排队跨时段作废**：`render()` 里复查时段，命中就作废并回退「今日次数/轮次」。
 3. **每日上限** `dailyCap`（缺省 12）：按部署时区自然日，复用 `nudgesToday`，跨天清零。
-4. **退避** `backoffAfter/backoffFactor/backoffMaxFactor`（缺省关闭）：`rounds` 越多间隔越长、封顶；
-   人一说话 `rounds=0` 立刻恢复。**这个机制预留给后面的「心情」驱动**——心情迟早会想直接压「唤醒意愿」，
+4. **退避** `backoffAfter/backoffFactor/backoffMaxFactor`（缺省关闭）：**数的是「主动搭话没人回」**，
+   不是叫醒次数；人一说话清零。详见 P3 那一节。**这个机制预留给后面的「心情」驱动**——心情迟早会想直接压「唤醒意愿」，
    届时光改 `backoffMultiplier()` 或换一个意愿来源即可，不用动调度骨架。
 5. **`skipChance`**：逻辑已实现（压制到下一个间隔），默认 0 且不进配置组，等 P3 再决定是否暴露。
 6. **jitter 语义固定下来**：`基准 × (1 + random × jitter)`，只往后偏、每个间隔重掷、不落盘；
@@ -208,7 +210,20 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 5. **公开状态**（`status.json`）：`sleep.active/endsAt/wokeCount/lastWokeAt/lastWokeBy`、
    `today.nudges/cap`，原子写；供微信桥等插件读取，不含敏感字段。
 
-**本地验证**：`smoke.mjs` 162 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
+### 退避语义修正（2026-11-02，主人指出上游的问题）
+
+- **问题**：上游（以及我们 P1）把「叫醒次数」当退避依据。可 Coo 完全可能选择不说话、
+  或者跑去查资料/整理文件——这些不该算「没人理」。
+- **现在**：退避改数 `state.unanswered`，只统计「主动搭话却没人回应」：
+  1. 每次叫醒记一轮 `attempt`；
+  2. `outputTap` 看到 `response.output_item.added` + `item.type === 'function_call'`
+     且工具名在 `speakTools`（缺省 `pet_say/pet_ask/console_send/clawbridge_send`）里 → 标记「开口了」；
+  3. 下一次叫醒前 `settleAttempt()`：有人回过 → 清零；开了口但没人回 → +1；没开口 → 不变。
+- **为什么用 outputTap**：桌宠与控制台会留 `.self` 事件，但微信桥**发出去的消息不落事件**，
+  只有主会话输出流能统一看到「它调了哪个说话工具」。
+- **局限**：某个插件若不通过工具、而是直接改外部状态，这里看不到；把它的发送工具名加进 `speakTools` 即可。
+- **公式**：`倍数 = min(上限, factor ^ max(0, unanswered - backoffAfter + 1))`——连续 N 次被无视后开始变稀。
+**本地验证**：`smoke.mjs` 170 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
 睡眠阻断与重新计时、排队作废、每日上限、退避时间表、概率跳过、重启续算、坏文件、
 **两条睡眠提示、重启不重发、被吵醒合并计数（30 分钟）、内部/自录不计、piggyback 与 90 秒过期、
 自定义文案、status.json 内容**。
@@ -260,7 +275,9 @@ cd D:\文档\deepseek-harness\default-workspace\selftalk
     `wokeCount: 1`）；30 分钟内再发几条，`wokeCount` 不变；`status.json` 里 `sleep.wokeCount` 同步。
 13. **文案热改**：编辑 `data\home\companion\data\rhythm\messages.json` 改一句话，下一条提示即生效（无需重启）。
 14. **兜底提示不迟到**：睡眠时段里发消息后隔 3 分钟再看，日志里不应出现新的一轮「被吵醒」提示
-    （`piggyback` 的 90 秒保鲜期应已把它作废）。
+    （`piggyback` 的 `wakeHintSeconds` 保鲜期应已把它作废）。
+15. **退避只数搭话**：把 `backoffAfter` 设成 1，让 Coo 在叫醒后只查资料不开口 → 下一次间隔不应变长；
+    让它用 `pet_say` 说一句而你不回 → 下一次间隔应该变长。
 
 ---
 

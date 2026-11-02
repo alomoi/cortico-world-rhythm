@@ -63,6 +63,16 @@
   `today.nudges/cap`），原子写，供其他插件读取；不含敏感字段。
 - `describe.json` 新增 `rhythm.hint` 与 `rhythm.woke` 两个事件声明。
 
+### 退避语义修正：只数「主动搭话没人回」
+
+- 之前退避数的是叫醒次数：Coo 安静地结束一轮、或跑去查资料/整理文件，也会被当成「没人理」——
+  这是上游就有的问题。
+- 现在改数 state.unanswered：每次叫醒记一轮 ttempt；outputTap 里看到
+  esponse.output_item.added 的 unction_call 且名字在 speakTools 里，才算「开口了」；
+  下一次叫醒前结算——有人回 → 清零，开了口没人回 → +1，没开口 → 不变。
+- 新增配置 speakTools（缺省 pet_say, pet_ask, console_send, clawbridge_send）：
+  装了新的通讯插件就把它的发送工具名加进来。
+- 倍数公式随之改为 min(上限, factor ^ max(0, unanswered - backoffAfter + 1))。
 ## 0.2.2
 
 - 包简介换成中文（npm 页面与扩展市场显示）。

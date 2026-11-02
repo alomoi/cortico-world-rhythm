@@ -65,6 +65,9 @@ export interface RhythmUi {
   onlyWhenIdleDescription: string;
   /** 状态灯的名字（悬停标题）。 */
   lampLabel: string;
+  /** 「搭话」工具名单的标题与说明（退避只数这些）。 */
+  speakToolsTitle: string;
+  speakToolsDescription: string;
   /** 状态灯悬停说明。 */
   lampHint: (info: LampInfo) => string;
   /** 计时关闭时的悬停说明。 */
@@ -112,6 +115,8 @@ const zh: RhythmUi = {
   onlyWhenIdleTitle: '只在 Coo 空闲时叫醒',
   onlyWhenIdleDescription: '它正在跑模型或执行工具时先不叫醒，等这一轮结束。默认打开，避免打断它手上的事。',
   lampLabel: '叫醒计时',
+  speakToolsTitle: '哪些工具算「主动搭话」',
+  speakToolsDescription: '退避只统计这些工具被调用、又没人回应的情况（例如气泡、控制台、微信）。它只是去查资料、整理文件就不算。逗号分隔；装了新的通讯插件就把它的发送工具名加进来。',
   lampHint: (info) => {
     if (info.windowKind === 'sleep') {
       return `在线：睡眠时段（${info.windowEndsAt} 醒）· 今日 ${info.nudgesToday} 次。`;
@@ -174,6 +179,8 @@ const en: RhythmUi = {
   onlyWhenIdleTitle: 'Only wake the bot while it is idle',
   onlyWhenIdleDescription: 'Skips the wake-up while the model or a tool is running, and waits for the turn to end. On by default so it never interrupts itself.',
   lampLabel: 'Wake timer',
+  speakToolsTitle: 'Which tools count as "reaching out"',
+  speakToolsDescription: 'The backoff only counts calls to these tools that nobody answered (bubble, console, WeChat, ...). Looking things up or tidying files does not count. Comma-separated; add the send tool of any new chat plugin you install.',
   lampHint: (info) => {
     if (info.windowKind === 'sleep') {
       return `Online: sleep window (awake at ${info.windowEndsAt}) · ${info.nudgesToday} today.`;

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 作息 World：一段时间没人跟 Coo 说话，就把它叫醒一次，让它自己决定开不开口、
  * 先用哪个工具、还是什么都不说（end_turn）。叫醒靠一条 internal 事件投递，正文由
  * model-text.ts 按模型文本语言给；事件以 flush 投递，空闲的主循环收到即开始一轮。
@@ -32,7 +32,7 @@
  * 叫醒事件在投递时才渲染（pushDeferred）：如果排队期间使用者回来了，这一条作废。
  */
 import { join } from 'node:path';
-import type { EventEnvelope, RunPhase, World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
+import type { EventEnvelope, OutputTap, RunPhase, World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
 import type { Language } from 'cortico/core/language.ts';
 import { shortTime } from 'cortico/core/util.ts';
 import { rhythmConfigGroup, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
@@ -62,6 +62,9 @@ const SELF_SUFFIX = '.self';
 
 /** 「被吵醒」提示的保鲜期由配置给（`wakeHintSeconds`，缺省 90 秒），超过就作废。 */
 const DEFAULT_WAKE_HINT_SECONDS = 90;
+
+/** 算「主动搭话」的工具名；配置是逗号分隔的字符串。 */
+const DEFAULT_SPEAK_TOOLS = 'pet_say, pet_ask, console_send, clawbridge_send';
 
 /**
  * 旧白名单：`knownChannelsOnly` 打开时只认这些。
@@ -137,6 +140,11 @@ export class RhythmWorld implements World {
   private lastWindow: 'sleep' | 'rest' | null = null;
   /** 概率跳过时压制到这一刻（epoch ms）。 */
   private suppressedUntil = 0;
+  /**
+   * 最近一次叫醒之后的那一轮：它有没有对外开口。
+   * 只有「开了口又没人回」才计入退避；安静地结束、或去查资料都不算。
+   */
+  private attempt: { at: number; spoke: boolean } | null = null;
   /** 文案文件的损坏只报一次，别每次提示都刷屏。 */
   private messagesWarned = false;
 
@@ -146,6 +154,7 @@ export class RhythmWorld implements World {
       dayKey: localDayKey(opts.timezone, Date.now()),
       nudgesToday: 0,
       rounds: 0,
+      unanswered: 0,
       lastNudgeAt: null,
       lastOutcome: null,
       lastOutcomeAt: null,
@@ -194,6 +203,7 @@ export class RhythmWorld implements World {
     const dayKey = localDayKey(this.opts.timezone, now);
     const { state, error } = loadState(stateFilePath(this.opts.dataDir), dayKey);
     this.state = state;
+    this.attempt = null;
     if (error) host.log.warn('作息:状态文件读不出来，按新的一天开始', { error });
     this.warnMessageProblems();
 
@@ -264,6 +274,66 @@ export class RhythmWorld implements World {
     this.timer = null;
     this.persist();
     this.host = null;
+  }
+
+  /**
+   * 主 session 的输出流旁路：只看“它有没有调用对外说话的工具”。
+   * 这是判断“主动搭话”的可靠信号——即使某个渠道（如微信桥）不把自己的发出消息写进事件库。
+   */
+  outputTap(): OutputTap {
+    return { onEvent: (event) => this.observeStream(event) };
+  }
+
+  /** 从流事件里认出 function_call；只有 `speakTools` 里的工具才算开口。 */
+  private observeStream(event: Parameters<OutputTap['onEvent']>[0]): void {
+    const e = event as unknown as { type?: string; item?: { type?: string; name?: string } | null };
+    if (e.type !== 'response.output_item.added') return;
+    const item = e.item;
+    if (!item || item.type !== 'function_call' || typeof item.name !== 'string') return;
+    if (!this.isSpeakTool(item.name)) return;
+    if (!this.attempt || this.attempt.spoke) return;
+    this.attempt.spoke = true;
+    this.host?.log.debug('作息:叫醒后开口了', { tool: item.name });
+  }
+
+  /** 工具名是否算“主动搭话”（大小写不敏感，逗号分隔）。 */
+  private isSpeakTool(name: string): boolean {
+    const raw = typeof this.opts.cfg.speakTools === 'string' ? this.opts.cfg.speakTools : DEFAULT_SPEAK_TOOLS;
+    const target = name.trim().toLowerCase();
+    for (const part of raw.split(',')) {
+      if (part.trim().toLowerCase() === target) return true;
+    }
+    return false;
+  }
+
+  /**
+   * 结算上一轮叫醒：坐下来数一数，“这次它到底有没有主动开口”。
+   * - 人在这期间说过话：算被回应，清零；
+   * - 它调用了说话工具、又没人回应：`unanswered += 1`，退避据此变稀；
+   * - 它安静地结束、或去查资料/整理文件：什么都不记。
+   */
+  private settleAttempt(): void {
+    const attempt = this.attempt;
+    this.attempt = null;
+    if (!attempt) return;
+    const answered = this.latestPersonActivity().at > attempt.at;
+    if (answered) {
+      if (this.state.unanswered !== 0) {
+        this.state.unanswered = 0;
+        this.host?.log.debug('作息:有人回应了，退避归零');
+      }
+      return;
+    }
+    if (!attempt.spoke) {
+      this.host?.log.debug('作息:这一轮没有对外搭话，不计入退避', { round: this.rounds });
+      return;
+    }
+    this.state.unanswered += 1;
+    this.host?.log.info('作息:搭话没人理', {
+      unanswered: this.state.unanswered,
+      backoffAfter: this.limits().backoffAfter,
+      waitedMin: Math.max(1, Math.round((Date.now() - attempt.at) / 60_000)),
+    });
   }
 
   /** 主循环的阶段变化：只记录，不做耗时的事（这个钩子在主循环调用栈上）。 */
@@ -338,10 +408,14 @@ export class RhythmWorld implements World {
       : localDayKey(this.opts.timezone, nowMs - 24 * 3_600_000);
   }
 
-  /** 退避倍数：连续没人理之后越大，封顶 backoffMaxFactor。 */
+  /**
+   * 退避倍数：数的是「主动搭话却没人回」的次数（`state.unanswered`），不是叫醒次数。
+   * 它安静地结束一轮、或者去查资料/整理文件，都不算一次失败的搭话。
+   */
   private backoffMultiplier(limits: Limits): number {
     if (limits.backoffAfter <= 0) return 1;
-    const extra = this.rounds - limits.backoffAfter;
+    // 连续 N 次被无视之后开始变稀：第 N+1 次起乘一次 factor。
+    const extra = this.state.unanswered - limits.backoffAfter + 1;
     if (extra <= 0) return 1;
     return Math.min(limits.backoffMaxFactor, Math.pow(limits.backoffFactor, extra));
   }
@@ -460,6 +534,8 @@ export class RhythmWorld implements World {
       const hadRounds = this.rounds > 0;
       this.lastActivitySeen = latest.at;
       this.rounds = 0;
+      this.state.unanswered = 0;
+      this.attempt = null;
       this.suppressedUntil = 0;
       this.rollJitter();
       host.log.debug('作息:有人回来了，安静计时重新开始', {
@@ -497,6 +573,7 @@ export class RhythmWorld implements World {
   private enterWindow(windowNow: { kind: 'sleep' | 'rest'; window: ClockWindow }, now: number): void {
     const host = this.host;
     this.lastWindow = windowNow.kind;
+    this.attempt = null;
     if (windowNow.kind !== 'sleep') {
       host?.log.info('作息:进入休息时段', { until: formatClock(windowNow.window.end) });
       return;
@@ -556,6 +633,8 @@ export class RhythmWorld implements World {
     // 无论 sleep 还是 rest：安静与轮次都从头开始，避免时段结束整点立刻跳出来。
     this.lastActivitySeen = now;
     this.rounds = 0;
+    this.state.unanswered = 0;
+    this.attempt = null;
     this.lastNudgeAt = 0;
     this.suppressedUntil = 0;
     this.rollJitter();
@@ -574,6 +653,9 @@ export class RhythmWorld implements World {
     const previous = this.lastActivitySeen;
     if (latest.at > previous) this.lastActivitySeen = latest.at;
     if (!latest.type) return;
+    // 有人来找它：无论这一下是否计一次「被吵醒」，退避都从头开始。
+    this.state.unanswered = 0;
+    this.attempt = null;
 
     const gapMs = limits.wakeGapMinutes * 60_000;
     const countedAt = this.state.sleep.lastCountedAt ? Date.parse(this.state.sleep.lastCountedAt) : 0;
@@ -674,7 +756,9 @@ export class RhythmWorld implements World {
     if (!host) return;
     const limits = this.limits();
     const again = this.rounds > 0;
+    this.settleAttempt();
     this.rounds += 1;
+    this.attempt = { at: now, spoke: false };
     this.lastNudgeAt = now;
     this.state.nudgesToday += 1;
     this.suppressedUntil = 0;
@@ -736,6 +820,7 @@ export class RhythmWorld implements World {
       dayKey: this.state.dayKey,
       nudgesToday: this.state.nudgesToday,
       rounds: this.rounds,
+      unanswered: this.state.unanswered,
       lastNudgeAt: this.lastNudgeAt > 0 ? new Date(this.lastNudgeAt).toISOString() : null,
       lastOutcome: this.state.lastOutcome,
       lastOutcomeAt: this.state.lastOutcomeAt,

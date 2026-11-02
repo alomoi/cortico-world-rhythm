@@ -1,4 +1,4 @@
-# 作息（Rhythm）— Coopanion 插件
+﻿# 作息（Rhythm）— Coopanion 插件
 
 > **本目录是 fork，不是上游原样。**
 >
@@ -33,7 +33,7 @@
 4. 叫醒事件在真正投递时才生成；如果排队期间人回来了，这一条作废，不会半路冒出来。
 5. Coo 正在跑模型或工具时先不叫醒（`onlyWhenIdle`，缺省开），等这一轮结束再判断。
 6. 睡眠时段与休息时段内不主动叫醒；离开时段时安静计时从那一刻重新开始。一天最多叫 `dailyCap` 次；
-   一直没人理时再次叫醒的间隔按 `backoffAfter/backoffFactor` 逐渐拉长，你一说话就恢复。
+   它**主动开口却没人回应**时，再次叫醒的间隔按 `backoffAfter/backoffFactor` 逐渐拉长；它只是安静待着或去查资料不算；你一说话就恢复。
 7. 睡眠时段开始时发一句「该睡了」、结束时发一句「该醒了」，让 Coo 自己决定用不用
    `pet_act` 的 `sleep` / `stand` 动作躺下或站起来（插件不能直接控制形象）。
 8. 睡眠中有人来找 Coo（任何渠道）会按 `wakeGapMinutes` 合并计一次「被吵醒」，
@@ -68,9 +68,10 @@
 | `wakeHint` | true | 睡眠中被吵醒时，搭着这一轮给它一句「你被吵醒了」（超过 90 秒作废） |
 | `wakeGapMinutes` | 30 | 同一场打扰的合并间隔；超过它再来人才算「又被吵醒一次」 |
 | `wakeHintSeconds` | 90 | 「被吵醒」提示的保鲜期（10–300 秒）；超过就作废，不事后补发 |
+| `speakTools` | `pet_say, pet_ask, console_send, clawbridge_send` | 哪些工具算「主动搭话」；退避只统计这些工具被调用又没人回，查资料/整理文件不算 |
 | `dailyCap` | 12 | 一天（部署时区）最多主动叫醒几次；0 = 不限 |
-| `backoffAfter` | 0 | 连续几次没人理后开始拉长间隔；0 = 关闭退避 |
-| `backoffFactor` | 1.5 | 每多一次没人回应，间隔乘多少（1.0–3.0） |
+| `backoffAfter` | 0 | 连续几次「主动搭话没人回应」后开始拉长间隔；0 = 关闭退避 |
+| `backoffFactor` | 1.5 | 每多一次被无视的搭话，间隔乘多少（1.0–3.0） |
 | `backoffMaxFactor` | 4 | 间隔最多拉到基准的多少倍（1–10） |
 | `knownChannelsOnly` | false | 打开后退回旧行为：只把桌宠与控制台的事件当成「有人回来了」 |
 | `activityIgnore` | 空 | 不算「有人回来了」的事件类型，逗号分隔，`qq.system*` 做前缀匹配 |

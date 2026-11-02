@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * 行为冒烟测试：不需要 Coopanion，用假宿主与假时钟驱动 World 的计时逻辑。
  *
@@ -151,6 +151,7 @@ console.log('config defaults:');
   check('wakeHint defaults on', d.wakeHint === true);
   check('wakeGapMinutes defaults to 30', d.wakeGapMinutes === 30);
   check('wakeHintSeconds defaults to 90', d.wakeHintSeconds === 90);
+  check('speakTools defaults to the four known send tools', /pet_say/.test(d.speakTools) && /clawbridge_send/.test(d.speakTools));
 }
 
 // ── 1. 安静计时与第一次叫醒 ────────────────────────────────────────────────
@@ -703,40 +704,95 @@ console.log('maxRounds and dailyCap, whichever comes first:');
   await capFirst.world.stop();
 }
 
-// ── 22. 退避：越叫越稀，说话就恢复 ────────────────────────────────────────
-console.log('backoff:');
+// ── 22. 退避：只数「主动搭话却没人回」，不数叫醒次数 ──────────────────────
+/** 模拟主会话流：它调用了某个工具。 */
+const tapTool = (h, name) => h.world.outputTap().onEvent({ type: 'response.output_item.added', item: { type: 'function_call', name } });
+
+console.log('backoff counts only unanswered outreach:');
 {
   at('2026-11-02T09:00:00+08:00');
-  const h = harness({ repeatMinutes: 25, backoffAfter: 2, backoffFactor: 2, backoffMaxFactor: 4 });
+  const h = harness({ repeatMinutes: 10, backoffAfter: 1, backoffFactor: 2, backoffMaxFactor: 4 });
   await boot(h);
   advance(15);
-  h.world.tick();   // 1 @ 15
-  advance(25);
-  h.world.tick();   // 2 @ 40
-  advance(25);
-  h.world.tick();   // 3 @ 65（rounds=2，尚未起算）
-  check('first three use the base interval', h.pushes.length === 3, `${h.pushes.length}`);
+  h.world.tick();                        // 1 @ 15，静默（没开口）
+  check('first nudge fires', h.pushes.length === 1);
+  check('a silent turn is not an attempt', h.world.state.unanswered === 0);
 
-  advance(49);
-  h.world.tick();   // 114
-  check('no nudge before the doubled interval ends', h.pushes.length === 3);
+  tapTool(h, 'pet_say');                 // 这一轮它开口了
+  advance(10);
+  h.world.tick();                        // 2 @ 25，结算 → unanswered 1
+  check('an unanswered outreach is counted', h.world.state.unanswered === 1, `${h.world.state.unanswered}`);
+
+  advance(19);
+  h.world.tick();                        // 44
+  check('no nudge before the doubled interval', h.pushes.length === 2);
   advance(1);
-  h.world.tick();   // 115 = 65 + 25×2
-  check('fourth is delayed by the backoff factor', h.pushes.length === 4, `${h.pushes.length}`);
+  h.world.tick();                        // 45 = 25 + 10×2
+  check('the interval doubles after the first ignored outreach', h.pushes.length === 3);
 
-  advance(99);
-  h.world.tick();   // 214
-  check('fifth waits for the capped 4× interval', h.pushes.length === 4);
-  advance(1);
-  h.world.tick();   // 215
-  check('fifth fires at the cap', h.pushes.length === 5, `${h.pushes.length}`);
+  tapTool(h, 'web_search');              // 这一轮它去查资料，没跟人说话
+  advance(20);
+  h.world.tick();                        // 65 = 45 + 20
+  check('a silent research turn still nudges on schedule', h.pushes.length === 4);
+  check('and it does not make the backoff worse', h.world.state.unanswered === 1);
 
+  advance(20);
   addEvent(h, 'qq.message');
-  h.world.tick();
-  check('speaking resets the backoff', h.world.rounds === 0);
+  h.world.tick();                        // 有人回话 → 退避清零
+  check('a reply clears the unanswered count', h.world.state.unanswered === 0);
+  advance(15);
+  h.world.tick();                        // 安静的基准间隔再次生效
+  check('the base interval is back after a reply', h.pushes.length === 5);
+  await h.world.stop();
+}
+
+console.log('only configured speak tools count:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 10, backoffAfter: 1, backoffFactor: 2 });
+  await boot(h);
   advance(15);
   h.world.tick();
-  check('after speaking it nudges on the base interval again', h.pushes.length === 6, `${h.pushes.length}`);
+  tapTool(h, 'web_search');
+  advance(10);
+  h.world.tick();
+  check('a non-speech tool is not an attempt', h.world.state.unanswered === 0);
+
+  tapTool(h, 'pet_say');
+  advance(10);
+  h.world.tick();
+  check('a speech tool is an attempt', h.world.state.unanswered === 1);
+  await h.world.stop();
+
+  const custom = harness({ repeatMinutes: 10, backoffAfter: 1, speakTools: 'my_send' });
+  await boot(custom);
+  advance(15);
+  custom.world.tick();
+  tapTool(custom, 'pet_say');
+  advance(10);
+  custom.world.tick();
+  check('a custom list ignores pet_say', custom.world.state.unanswered === 0);
+  tapTool(custom, 'my_send');
+  advance(10);
+  custom.world.tick();
+  check('and counts the tool it names', custom.world.state.unanswered === 1);
+  await custom.world.stop();
+}
+
+console.log('a reply in the same turn clears the attempt:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 10, backoffAfter: 1 });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  tapTool(h, 'pet_say');
+  advance(5);
+  addEvent(h, 'qq.message');
+  h.world.tick();
+  advance(5);
+  h.world.tick();
+  check('the attempt is dropped when the person answers', h.world.state.unanswered === 0);
   await h.world.stop();
 }
 
