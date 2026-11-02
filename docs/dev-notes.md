@@ -124,6 +124,8 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 | 时段内与离开时段 | `world.ts › tick` | 时段内直接返回；离开时把安静起点重置到当前时刻 |
 | 时间参数 | `world.ts › limits` | 全局四个 + 时段/上限/退避六个 |
 | 安静判定 | `world.ts › dueAt` / `backoffMultiplier` | 首次 `quiet × jitter`；再次 `repeat × 退避倍数 × jitter` |
+| 叫醒正文 | `world.ts › composeNudge`、`context.ts`、`model-text.ts` | 默认只给事实；交接后/长间隔才引原话（40 字、剥渠道标记）；收尾句轮换防复读 |
+| 影子模式 | `world.ts › shadowNudge` / `tick` | `dryRun` 时不投递、不计数，只写日志与 `status.plan` |
 | 「搭话」判定 | `world.ts › outputTap` / `observeStream` / `isSpeakTool` | 看主会话流里的 `function_call` 名字是否在 `speakTools` 里（缺省 pet_say/pet_ask/console_send/clawbridge_send） |
 | 退避计数 | `world.ts › settleAttempt` | 只给「开了口又没人回」加一；安静结束/查资料不加；有人回话清零 |
 | 每日上限 | `world.ts › tick` | `dailyCap`，按部署时区自然日；复用 `nudgesToday` |
@@ -227,7 +229,7 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 - **观察日志**：叫醒后那一轮的每个 `function_call` 都会记一条 debug 日志（工具名、是否算搭话），排查时直接抄名字。
 - **局限**：只发不收的渠道（从不推人侧事件）学不到前缀；不通过工具改状态的插件也看不到——这两种只能进 `speakTools`。
 - **公式**：`倍数 = min(上限, factor ^ max(0, unanswered - backoffAfter + 1))`——连续 N 次被无视后开始变稀。
-**本地验证**：`smoke.mjs` 179 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
+**本地验证**：`smoke.mjs` 204 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
 睡眠阻断与重新计时、排队作废、每日上限、退避时间表、概率跳过、重启续算、坏文件、
 **两条睡眠提示、重启不重发、被吵醒合并计数（30 分钟）、内部/自录不计、piggyback 与 90 秒过期、
 自定义文案、status.json 内容**。

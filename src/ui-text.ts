@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 人读的界面文案（World 名、配置组标题与说明、状态灯），中文与英文两版。
  * 与模型读到的正文（model-text.ts）分开：这里只给控制台看。
  */
@@ -23,6 +23,8 @@ export interface LampInfo {
   windowKind: 'sleep' | 'rest' | null;
   /** 该时段的结束时刻 `HH:MM`。 */
   windowEndsAt: string | null;
+  /** 影子模式：只算不发。 */
+  shadow: boolean;
 }
 
 export interface RhythmUi {
@@ -72,6 +74,14 @@ export interface RhythmUi {
   speakIgnoreDescription: string;
   speakAnywhereTitle: string;
   speakAnywhereDescription: string;
+  dryRunTitle: string;
+  dryRunDescription: string;
+  contextAwareTitle: string;
+  contextAwareDescription: string;
+  contextQuotesTitle: string;
+  contextQuotesDescription: string;
+  contextStaleTitle: string;
+  contextStaleDescription: string;
   /** 状态灯悬停说明。 */
   lampHint: (info: LampInfo) => string;
   /** 计时关闭时的悬停说明。 */
@@ -125,24 +135,33 @@ const zh: RhythmUi = {
   speakIgnoreDescription: '误判时用来排除，逗号分隔，优先于自动识别。例如游戏里喊话的 minecraft_say。',
   speakAnywhereTitle: '宽松匹配工具名',
   speakAnywhereDescription: '打开后只要工具名里出现说话动词（send/say/reply…）就算搭话，不管前缀。能兜住 sendMsgToWechat 这种乱名，但误判率更高，默认关。',
+  dryRunTitle: '影子模式（只算不发）',
+  dryRunDescription: '打开后照常计算什么时候该叫、正文长什么样，但只写日志和状态文件，不投递任何事件。用来在真机上验证排程而不打扰桌宠。',
+  contextAwareTitle: '叫醒时带上最近对话的事实',
+  contextAwareDescription: '告诉 Coo「安静了多久、它上次开口有没有被接」。默认开；关掉就回到最朴素的叫醒。',
+  contextQuotesTitle: '上下文可能丢失时引用原话',
+  contextQuotesDescription: '只在交接后或安静很久时，引用最近一两句原话（40 字内，会剥掉渠道标记）。默认开。',
+  contextStaleTitle: '多久算「上下文可能丢了」',
+  contextStaleDescription: '安静超过这么多分钟就允许引用原话。缺省 120 分钟。',
   lampHint: (info) => {
+    const prefix = info.shadow ? '［影子］' : '';
     if (info.windowKind === 'sleep') {
-      return `在线：睡眠时段（${info.windowEndsAt} 醒）· 今日 ${info.nudgesToday} 次。`;
+      return prefix + `在线：睡眠时段（${info.windowEndsAt} 醒）· 今日 ${info.nudgesToday} 次。`;
     }
     if (info.windowKind === 'rest') {
-      return `在线：休息时段（${info.windowEndsAt} 恢复）· 今日 ${info.nudgesToday} 次。`;
+      return prefix + `在线：休息时段（${info.windowEndsAt} 恢复）· 今日 ${info.nudgesToday} 次。`;
     }
     if (info.capReached) {
-      return `在线：今日已达上限 ${info.dailyCap} 次，明天再叫。`;
+      return prefix + `在线：今日已达上限 ${info.dailyCap} 次，明天再叫。`;
     }
     if (info.capped) {
-      return `在线：本轮已叫醒 ${info.maxRounds} 次，等有人说话后重新计时（今日 ${info.nudgesToday} 次）。`;
+      return prefix + `在线：本轮已叫醒 ${info.maxRounds} 次，等有人说话后重新计时（今日 ${info.nudgesToday} 次）。`;
     }
     if (info.nextInMinutes !== null) {
       const cap = info.dailyCap > 0 ? `，今日上限 ${info.dailyCap} 次` : '';
-      return `在线：约 ${info.nextInMinutes} 分钟后叫醒 Coo（今日 ${info.nudgesToday} 次${cap}）。`;
+      return prefix + `在线：约 ${info.nextInMinutes} 分钟后叫醒 Coo（今日 ${info.nudgesToday} 次${cap}）。`;
     }
-    return `在线：等安静满 ${info.quietMinutes} 分钟再叫醒（今日 ${info.nudgesToday} 次）。`;
+    return prefix + `在线：等安静满 ${info.quietMinutes} 分钟再叫醒（今日 ${info.nudgesToday} 次）。`;
   },
   lampOff: '在线：安静计时已关闭。',
   badgeToday: '今日叫醒',
@@ -193,24 +212,33 @@ const en: RhythmUi = {
   speakIgnoreDescription: 'Comma-separated; wins over everything else. Use it when something like minecraft_say is misread as talking to the person.',
   speakAnywhereTitle: 'Loose tool-name matching',
   speakAnywhereDescription: 'When on, any tool name containing a speech verb (send/say/reply…) counts, whatever its prefix. Catches names like sendMsgToWechat but misreads more often. Off by default.',
+  dryRunTitle: 'Shadow mode (plan only)',
+  dryRunDescription: 'Computes when it would wake and what it would say, but only writes logs and the status file - nothing is delivered. Use it to verify the schedule on the real machine without disturbing the pet.',
+  contextAwareTitle: 'Tell the bot the recent facts',
+  contextAwareDescription: 'Includes how long it has been quiet and whether its last outreach was answered. On by default; off gives the plain wake-up.',
+  contextQuotesTitle: 'Quote the last lines when context may be stale',
+  contextQuotesDescription: 'Only after a context handoff or a long quiet stretch, quotes one or two recent lines (40 chars, channel markers stripped). On by default.',
+  contextStaleTitle: 'How quiet counts as stale context',
+  contextStaleDescription: 'Quiet minutes after which quoting is allowed. 120 by default.',
   lampHint: (info) => {
+    const prefix = info.shadow ? '[shadow] ' : '';
     if (info.windowKind === 'sleep') {
-      return `Online: sleep window (awake at ${info.windowEndsAt}) · ${info.nudgesToday} today.`;
+      return prefix + `Online: sleep window (awake at ${info.windowEndsAt}) · ${info.nudgesToday} today.`;
     }
     if (info.windowKind === 'rest') {
-      return `Online: rest window (back at ${info.windowEndsAt}) · ${info.nudgesToday} today.`;
+      return prefix + `Online: rest window (back at ${info.windowEndsAt}) · ${info.nudgesToday} today.`;
     }
     if (info.capReached) {
-      return `Online: daily cap of ${info.dailyCap} reached; more tomorrow.`;
+      return prefix + `Online: daily cap of ${info.dailyCap} reached; more tomorrow.`;
     }
     if (info.capped) {
-      return `Online: ${info.maxRounds} wake-ups this stretch; the clock restarts when someone speaks (${info.nudgesToday} today).`;
+      return prefix + `Online: ${info.maxRounds} wake-ups this stretch; the clock restarts when someone speaks (${info.nudgesToday} today).`;
     }
     if (info.nextInMinutes !== null) {
       const cap = info.dailyCap > 0 ? `, cap ${info.dailyCap}/day` : '';
-      return `Online: next wake-up in about ${info.nextInMinutes} min (${info.nudgesToday} today${cap}).`;
+      return prefix + `Online: next wake-up in about ${info.nextInMinutes} min (${info.nudgesToday} today${cap}).`;
     }
-    return `Online: waiting for ${info.quietMinutes} quiet minutes (${info.nudgesToday} today).`;
+    return prefix + `Online: waiting for ${info.quietMinutes} quiet minutes (${info.nudgesToday} today).`;
   },
   lampOff: 'Online: the quiet timer is off.',
   badgeToday: 'Wakes today',

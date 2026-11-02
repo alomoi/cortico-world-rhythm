@@ -37,7 +37,8 @@ import type { Language } from 'cortico/core/language.ts';
 import { shortTime } from 'cortico/core/util.ts';
 import { rhythmConfigGroup, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
 import { fillTemplate, loadMessages, messagesPath, type HintKind } from './messages.ts';
-import { NUDGE_TEXT, type ModelLanguage } from './model-text.ts';
+import { buildThread, sanitizeQuote } from './context.ts';
+import { nudgeText, type ModelLanguage, type NudgeQuote } from './model-text.ts';
 import { loadState, localDayKey, saveState, stateFilePath, writeJsonAtomic, type RhythmState } from './state.ts';
 import { uiText, type LampInfo } from './ui-text.ts';
 import { formatClock, matchWindow, minutesOfDay, parseWindowList, type ClockWindow } from './windows.ts';
@@ -116,6 +117,10 @@ interface Limits {
   wakeHint: boolean;
   wakeGapMinutes: number;
   wakeHintSeconds: number;
+  dryRun: boolean;
+  contextAware: boolean;
+  contextQuotes: boolean;
+  contextStaleMinutes: number;
   knownChannelsOnly: boolean;
   onlyWhenIdle: boolean;
 }
@@ -150,6 +155,12 @@ export class RhythmWorld implements World {
    * 只有「开了口又没人回」才计入退避；安静地结束、或去查资料都不算。
    */
   private attempt: { at: number; spoke: boolean } | null = null;
+  /** 从流里抓到的「它最近说了什么」（覆盖微信这类不落 self 事件的渠道）。 */
+  private lastSaid: { at: number; text: string } | null = null;
+  /** 流里的 function_call 名字，等参数到齐后据此识别说话工具。 */
+  private readonly streamCallNames = new Map<string, string>();
+  /** 上下文交接发生的时刻；晚于最后一次对话时，下一次叫醒值得复习一下。 */
+  private handoffAt = 0;
   /** 文案文件的损坏只报一次，别每次提示都刷屏。 */
   private messagesWarned = false;
   /**
@@ -294,19 +305,63 @@ export class RhythmWorld implements World {
     return { onEvent: (event) => this.observeStream(event) };
   }
 
-  /** 从流事件里认出 function_call；只有 `speakTools` 里的工具才算开口。 */
+  /**
+   * 看主会话的流：一是判断「它这一轮有没有开口」，二是顺手记住「它说了什么」。
+   * 后者能覆盖微信这类不把自己的发言写进事件库的渠道。
+   */
   private observeStream(event: Parameters<OutputTap['onEvent']>[0]): void {
-    const e = event as unknown as { type?: string; item?: { type?: string; name?: string } | null };
-    if (e.type !== 'response.output_item.added') return;
-    const item = e.item;
-    if (!item || item.type !== 'function_call' || typeof item.name !== 'string') return;
-    const speech = this.isSpeakTool(item.name);
-    // 只在叫醒后的那一轮里记观察日志，别把普通对话也刷满
-    if (!this.attempt) return;
-    this.host?.log.debug('作息:叫醒后的工具调用', { tool: item.name, countsAsSpeech: speech });
-    if (!speech || this.attempt.spoke) return;
-    this.attempt.spoke = true;
-    this.host?.log.debug('作息:叫醒后开口了', { tool: item.name });
+    const e = event as unknown as {
+      type?: string;
+      item?: { type?: string; name?: string; id?: string; call_id?: string } | null;
+      item_id?: string;
+      arguments?: string;
+    };
+
+    if (e.type === 'response.output_item.added') {
+      const item = e.item;
+      if (!item || item.type !== 'function_call' || typeof item.name !== 'string') return;
+      const id = typeof item.call_id === 'string' ? item.call_id : typeof item.id === 'string' ? item.id : '';
+      if (id) {
+        if (this.streamCallNames.size > 32) this.streamCallNames.clear();
+        this.streamCallNames.set(id, item.name);
+      }
+      const speech = this.isSpeakTool(item.name);
+      if (!this.attempt) return;
+      this.host?.log.debug('作息:叫醒后的工具调用', { tool: item.name, countsAsSpeech: speech });
+      if (!speech || this.attempt.spoke) return;
+      this.attempt.spoke = true;
+      this.host?.log.debug('作息:叫醒后开口了', { tool: item.name });
+      return;
+    }
+
+    if (e.type !== 'response.function_call_arguments.done') return;
+    const id = e.item_id;
+    if (!id) return;
+    const name = this.streamCallNames.get(id);
+    if (!name || !this.isSpeakTool(name)) return;
+    const text = sanitizeQuote(this.speechArgumentText(name, e.arguments));
+    if (!text) return;
+    this.lastSaid = { at: Date.now(), text };
+    this.streamCallNames.delete(id);
+  }
+
+  /** 从说话工具的参数里取正文：pet_say 用 script，其余优先 text/message。 */
+  private speechArgumentText(name: string, raw: unknown): string {
+    if (typeof raw !== 'string' || !raw.trim()) return '';
+    let args: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null) return '';
+      args = parsed as Record<string, unknown>;
+    } catch {
+      return '';
+    }
+    const preferred = name.toLowerCase() === 'pet_say' ? ['script', 'text'] : ['text', 'message', 'script', 'question', 'content'];
+    for (const key of preferred) {
+      const value = args[key];
+      if (typeof value === 'string' && value.trim()) return value;
+    }
+    return '';
   }
 
   /** 记下一个聊天渠道前缀（上限 64 个，够用且防失控）。 */
@@ -381,6 +436,12 @@ export class RhythmWorld implements World {
     });
   }
 
+  /** 上下文刚交接：最近的对话可能只剩摘要，下一次叫醒可以考虑引用原话。 */
+  onHandoffEnded(): void {
+    this.handoffAt = Date.now();
+    this.host?.log.info('作息:上下文已交接，下一次叫醒可复习');
+  }
+
   /** 主循环的阶段变化：只记录，不做耗时的事（这个钩子在主循环调用栈上）。 */
   onRunPhase(phase: RunPhase): void {
     this.phaseState = phase.state;
@@ -414,6 +475,10 @@ export class RhythmWorld implements World {
       wakeHint: cfg.wakeHint !== false,
       wakeGapMinutes: Math.floor(numberIn(cfg.wakeGapMinutes, 30, 1, 240)),
       wakeHintSeconds: Math.floor(numberIn(cfg.wakeHintSeconds, DEFAULT_WAKE_HINT_SECONDS, 10, 300)),
+      dryRun: cfg.dryRun === true,
+      contextAware: cfg.contextAware !== false,
+      contextQuotes: cfg.contextQuotes !== false,
+      contextStaleMinutes: Math.floor(numberIn(cfg.contextStaleMinutes, 120, 10, 1440)),
       knownChannelsOnly: cfg.knownChannelsOnly === true,
       onlyWhenIdle: cfg.onlyWhenIdle !== false,
     };
@@ -505,6 +570,7 @@ export class RhythmWorld implements World {
       capReached,
       windowKind: windowNow?.kind ?? null,
       windowEndsAt: windowNow ? formatClock(windowNow.window.end) : null,
+      shadow: limits.dryRun,
     };
   }
 
@@ -582,6 +648,7 @@ export class RhythmWorld implements World {
       this.rounds = 0;
       this.state.unanswered = 0;
       this.attempt = null;
+      if (this.handoffAt > 0 && latest.at > this.handoffAt) this.handoffAt = 0;
       this.suppressedUntil = 0;
       this.rollJitter();
       host.log.debug('作息:有人回来了，安静计时重新开始', {
@@ -605,6 +672,11 @@ export class RhythmWorld implements World {
     const due = this.dueAt(limits);
     if (due === null || now < due) return;
 
+    if (limits.dryRun) {
+      this.shadowNudge(now, latest);
+      this.suppressedUntil = now + this.intervalMinutes(limits) * 60_000;
+      return;
+    }
     if (limits.skipChance > 0 && Math.random() < limits.skipChance) {
       this.suppressedUntil = now + this.intervalMinutes(limits) * 60_000;
       host.log.debug('作息:这一次按概率跳过了', { skipChance: limits.skipChance, rounds: this.rounds });
@@ -702,6 +774,7 @@ export class RhythmWorld implements World {
     // 有人来找它：无论这一下是否计一次「被吵醒」，退避都从头开始。
     this.state.unanswered = 0;
     this.attempt = null;
+    if (this.handoffAt > 0 && latest.at > this.handoffAt) this.handoffAt = 0;
 
     const gapMs = limits.wakeGapMinutes * 60_000;
     const countedAt = this.state.sleep.lastCountedAt ? Date.parse(this.state.sleep.lastCountedAt) : 0;
@@ -803,6 +876,8 @@ export class RhythmWorld implements World {
     const limits = this.limits();
     const again = this.rounds > 0;
     this.settleAttempt();
+    // 先拼正文（此刻的轮次是「这一次」），再自增
+    const text = this.composeNudge(now, latest, this.rounds + 1);
     this.rounds += 1;
     this.attempt = { at: now, spoke: false };
     this.lastNudgeAt = now;
@@ -827,16 +902,83 @@ export class RhythmWorld implements World {
       origin: 'internal',
       senderKey: NUDGE_TYPE,
       render: () => {
-        const queued = this.queuedNudgeCancelled();
-        if (queued) return null;
-        const elapsed = Math.max(1, Math.round((Date.now() - this.lastActivitySeen) / 60_000));
-        const language = this.opts.language();
-        return NUDGE_TEXT[language]({ at: shortTime(this.opts.timezone), quietMinutes: elapsed, again });
+        if (this.queuedNudgeCancelled()) return null;
+        return text;
       },
     }, { trigger: 'flush' });
     this.persist();
   }
 
+  /** 影子模式：算出正文、写日志与状态，但不投递、不计数、不占用上限。 */
+  private shadowNudge(now: number, latest: { at: number; type: string }): void {
+    const host = this.host;
+    if (!host) return;
+    const limits = this.limits();
+    const due = this.dueAt(limits);
+    host.log.info('作息:[影子] 会叫醒', {
+      round: this.rounds + 1,
+      quietMinutes: Math.max(1, Math.round((now - this.lastActivitySeen) / 60_000)),
+      nudgesToday: this.state.nudgesToday,
+      shadow: true,
+      dueAt: due === null ? null : new Date(due).toISOString(),
+      text: this.composeNudge(now, latest, this.rounds + 1),
+    });
+    this.writeStatus();
+  }
+
+  /**
+   * 拼出叫醒正文：默认只给事实；只有在「上下文可能丢了」（交接后、或安静超过阈值）且允许时，
+   * 才带一两句净化过的原话引用。
+   */
+  private composeNudge(now: number, latest: { at: number; type: string }, round: number): string {
+    const limits = this.limits();
+    const language = this.opts.language();
+    const quietMinutes = Math.max(1, Math.round((now - this.lastActivitySeen) / 60_000));
+
+    let unanswered = this.state.unanswered > 0;
+    let quoteUser: NudgeQuote | null = null;
+    let quoteSelf: NudgeQuote | null = null;
+
+    if (limits.contextAware) {
+      const thread = buildThread(this.storeEvents(), { isPerson: (event) => this.isPersonActivity(event) });
+      // 流里抓到的「它刚说的话」比 self 事件更新时优先用它（覆盖微信这类渠道）
+      const said = this.lastSaid && (!thread.lastSelf || this.lastSaid.at > thread.lastSelf.at)
+        ? { at: this.lastSaid.at, text: this.lastSaid.text, answered: thread.lastUser !== null && thread.lastUser.at > this.lastSaid.at }
+        : thread.lastSelf;
+      if (said) unanswered = !said.answered;
+
+      const stale = (this.handoffAt > 0 && this.lastActivitySeen <= this.handoffAt)
+        || now - this.lastActivitySeen >= limits.contextStaleMinutes * 60_000;
+      if (limits.contextQuotes && stale) {
+        if (thread.lastUser) {
+          quoteUser = { at: shortTime(this.opts.timezone, new Date(thread.lastUser.at)), text: thread.lastUser.text };
+        }
+        if (said) {
+          quoteSelf = { at: shortTime(this.opts.timezone, new Date(said.at)), text: said.text, answered: said.answered };
+        }
+        if (quoteUser || quoteSelf) this.handoffAt = 0;
+      }
+    }
+
+    return nudgeText(language, {
+      at: shortTime(this.opts.timezone, new Date(now)),
+      quietMinutes,
+      again: round > 1,
+      round,
+      unanswered,
+      quoteUser,
+      quoteSelf,
+    });
+  }
+
+  /** 事件库里最近的外部事件；读不出来就当空的。 */
+  private storeEvents(): EventEnvelope[] {
+    try {
+      return this.host?.store.range({ limit: SCAN_LIMIT, origin: 'external' }) ?? [];
+    } catch {
+      return [];
+    }
+  }
   /**
    * 排队期间这一条是不是该作废：人回来了，或者已经进入睡眠/休息时段。
    * 作废时把预记的次数与轮次退回去，免得「没叫醒」也算进今日次数。
@@ -896,6 +1038,11 @@ export class RhythmWorld implements World {
       },
       today: { nudges: this.state.nudgesToday, cap: limits.dailyCap },
       speak: { channels: [...this.channelPrefixes].sort(), unanswered: this.state.unanswered },
+      plan: {
+        nextNudgeAt: (() => { const due = this.dueAt(limits); return due === null ? null : new Date(due).toISOString(); })(),
+        inWindow: windowNow?.kind ?? null,
+        shadow: limits.dryRun,
+      },
     });
     if (error) this.host?.log.warn('作息:公开状态写不进去', { error });
   }

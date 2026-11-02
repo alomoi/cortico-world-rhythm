@@ -30,6 +30,7 @@ const { default: definition } = await import('../src/index.ts');
 const { stateFilePath } = await import('../src/state.ts');
 const { messagesPath } = await import('../src/messages.ts');
 const windows = await import('../src/windows.ts');
+const ctxmod = await import('../src/context.ts');
 const { fakeWorldContext } = await import('cortico/extensions/dry-mount.ts');
 const { nullLogger } = await import('cortico/core/util.ts');
 
@@ -151,6 +152,10 @@ console.log('config defaults:');
   check('wakeHint defaults on', d.wakeHint === true);
   check('wakeGapMinutes defaults to 30', d.wakeGapMinutes === 30);
   check('wakeHintSeconds defaults to 90', d.wakeHintSeconds === 90);
+  check('dryRun defaults off', d.dryRun === false);
+  check('contextAware defaults on', d.contextAware === true);
+  check('contextQuotes defaults on', d.contextQuotes === true);
+  check('contextStaleMinutes defaults to 120', d.contextStaleMinutes === 120);
   check('speakTools defaults to the four known send tools', /pet_say/.test(d.speakTools) && /clawbridge_send/.test(d.speakTools));
   check('speakIgnore defaults empty', d.speakIgnore === '');
   check('loose speak matching defaults off', d.speakMatchAnywhere === false);
@@ -192,7 +197,7 @@ console.log('repeat nudge:');
   h.world.tick();
   check('repeat at repeatMinutes after the previous nudge', h.pushes.length === 2);
   const text = h.pushes[1].spec.render();
-  check('repeat text is marked as another quiet stretch', typeof text === 'string' && text.includes('又安静'), String(text));
+  check('repeat text is marked as another quiet stretch', typeof text === 'string' && text.includes('还是没人来'), String(text));
   await h.world.stop();
 }
 
@@ -1094,6 +1099,147 @@ console.log('public status file:');
   check('status reports when the window ends', status.sleep.endsAt === '08:00');
   check('status reports the wake-up count', status.sleep.wokeCount === 1);
   check('status reports who woke it', status.sleep.lastWokeBy === 'clawbridge.message');
+  await h.world.stop();
+}
+
+// ── 26. 内容感知：默认只给事实 ────────────────────────────────────────────
+console.log('context facts by default (no quotes):');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ contextStaleMinutes: 120 });
+  await boot(h);
+  advance(1);
+  h.events.push({
+    cursor: 1, type: 'desktop-pet.self', ts: new Date(clock).toISOString(), source: 'desktop-pet', origin: 'external',
+    text: '我先去忙一会儿', meta: { kind: 'say', beats: [{ text: '我先去忙一会儿' }] },
+  });
+  h.world.tick();
+  advance(14);
+  h.world.tick();
+  const text = String(h.pushes[0].spec.render());
+  check('the default wake-up mentions the unanswered outreach', text.includes('你前面说过一句'), text);
+  check('but it does not quote anything', !text.includes('「'), text);
+  check('the wording is channel neutral', !text.includes('气泡'), text);
+  await h.world.stop();
+}
+
+console.log('quotes only when context may be stale:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ contextStaleMinutes: 10 });
+  await boot(h);
+  advance(1);
+  addEvent(h, 'desktop-pet.message');
+  h.events[h.events.length - 1].text = '【害羞】今天好累 <wink>';
+  advance(1);
+  h.events.push({
+    cursor: h.events.length + 1, type: 'desktop-pet.self', ts: new Date(clock).toISOString(),
+    source: 'desktop-pet', origin: 'external', text: '【笑】我先去忙了', meta: { kind: 'say', beats: [{ text: '【笑】我先去忙了' }] },
+  });
+  advance(15);
+  h.world.tick();
+  const text = String(h.pushes[0].spec.render());
+  check('a quote appears after a long quiet stretch', text.includes('对方最后一句'), text);
+  check('the quote keeps the words but strips markers', text.includes('今天好累') && !text.includes('【害羞】') && !text.includes('<wink>'), text);
+  check('its own line is quoted too', text.includes('你上次说') && text.includes('我先去忙了'), text);
+  await h.world.stop();
+}
+
+console.log('a context handoff triggers quotes even when the quiet is short:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ contextStaleMinutes: 120 });
+  await boot(h);
+  advance(1);
+  addEvent(h, 'qq.message');
+  h.events[h.events.length - 1].text = '刚才说到哪了';
+  h.world.onHandoffEnded();
+  advance(15);
+  h.world.tick();
+  const text = String(h.pushes[0].spec.render());
+  check('handoff makes the next nudge quote', text.includes('对方最后一句') && text.includes('刚才说到哪了'), text);
+  await h.world.stop();
+}
+
+console.log('speech is captured from the stream for channels without self events:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 10, contextStaleMinutes: 1 });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  const tap = h.world.outputTap();
+  tap.onEvent({ type: 'response.output_item.added', item: { type: 'function_call', name: 'clawbridge_send', call_id: 'c1' } });
+  tap.onEvent({ type: 'response.function_call_arguments.done', item_id: 'c1', arguments: JSON.stringify({ text: '晚上见' }) });
+  advance(10);
+  h.world.tick();
+  const text = String(h.pushes[1].spec.render());
+  check('the stream capture is used for the quote', text.includes('你上次说') && text.includes('晚上见'), text);
+  await h.world.stop();
+}
+
+console.log('quote sanitising:');
+{
+  check('markers are stripped', ctxmod.sanitizeQuote('【害羞】你好<wink> sticker:cute') === '你好');
+  check('a pure marker quote is dropped', ctxmod.sanitizeQuote('【笑】<wink>') === '');
+  const long = '一'.repeat(80);
+  const cut = ctxmod.sanitizeQuote(long);
+  check('long quotes are truncated', cut.endsWith('…') && [...cut].length <= 41, String([...cut].length));
+}
+
+console.log('contextAware off falls back to the plain wake-up:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ contextAware: false });
+  await boot(h);
+  advance(1);
+  h.events.push({
+    cursor: 1, type: 'desktop-pet.self', ts: new Date(clock).toISOString(), source: 'desktop-pet', origin: 'external',
+    text: '我说了一句', meta: { kind: 'say', beats: [{ text: '我说了一句' }] },
+  });
+  h.world.tick();
+  advance(14);
+  h.world.tick();
+  const text = String(h.pushes[0].spec.render());
+  check('no fact line when contextAware is off', !text.includes('你前面说过一句'), text);
+  check('no quotes when contextAware is off', !text.includes('「'), text);
+  await h.world.stop();
+}
+
+console.log('closing lines rotate:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 5 });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  advance(5);
+  h.world.tick();
+  advance(5);
+  h.world.tick();
+  const texts = h.pushes.map((p) => String(p.spec.render()));
+  check('three wake-ups use three different closings', new Set(texts.map((x) => x.split('\n').at(-1))).size === 3, texts.join(' || '));
+  check('none of them mentions a specific channel', texts.every((x) => !x.includes('气泡')), texts.join(' || '));
+  await h.world.stop();
+}
+
+// ── 27. 影子模式：只算不发 ────────────────────────────────────────────────
+console.log('dry run:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ dryRun: true });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  check('nothing is delivered in shadow mode', h.pushes.length === 0);
+  check('the daily counter does not move', h.world.state.nudgesToday === 0);
+  const status = JSON.parse(readFileSync(join(h.dir, 'deployment', 'data', 'rhythm', 'status.json'), 'utf8'));
+  check('status marks the shadow mode', status.plan.shadow === true);
+  check('status exposes the next planned nudge', typeof status.plan.nextNudgeAt === 'string', JSON.stringify(status.plan));
+  check('the lamp says it is in shadow mode', h.world.webUi('zh').lamps[0].hint.includes('影子'));
+  advance(14);
+  h.world.tick();
+  check('shadow mode does not nudge on every tick', h.pushes.length === 0);
   await h.world.stop();
 }
 

@@ -73,6 +73,17 @@
 - 新增配置 speakTools（缺省 pet_say, pet_ask, console_send, clawbridge_send）：
   装了新的通讯插件就把它的发送工具名加进来。
 - 倍数公式随之改为 min(上限, factor ^ max(0, unanswered - backoffAfter + 1))。
+### P3：内容感知（轻量版）+ 影子模式
+
+- **影子模式** `dryRun`：照常算「什么时候该叫、正文长什么样」，只写日志与 `status.plan`，
+  不投递、不计数、不占每日上限。用于真机上验证排程而不打扰桌宠。
+- **叫醒正文**（`src/context.ts` + `model-text.ts`）：默认只给事实（安静多久、它上次开口有没有被接）；
+  原话引用只在「上下文可能丢失」（交接后、或安静超过 `contextStaleMinutes`）时出现，
+  截断 40 字并剥掉 `【…】`/`<…>`/`sticker:` 等渠道标记。
+- **防复读**：收尾句按本轮次数轮换三档；措辞改为渠道中性（不再写「在气泡里」）。
+- **微信兜底**：`outputTap` 抓 `clawbridge_send` 等说话工具的参数，补上「它上次说了什么」。
+- 新增配置：`dryRun`、`contextAware`、`contextQuotes`、`contextStaleMinutes`；
+  `status.json` 增加 `plan.nextNudgeAt / shadow`。
 ## 0.2.2
 
 - 包简介换成中文（npm 页面与扩展市场显示）。

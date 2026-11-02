@@ -49,6 +49,14 @@ export interface RhythmConfigSection extends WorldSection {
   speakIgnore: string;
   /** 宽松匹配：工具名里出现说话动词就算，不管前缀（默认关，误判率更高）。 */
   speakMatchAnywhere: boolean;
+  /** 影子模式：只计算与记日志，不投递任何事件。 */
+  dryRun: boolean;
+  /** 叫醒正文里带「最后谁在说话 / 它上次开口有没有被接」这些事实。 */
+  contextAware: boolean;
+  /** 允许在上下文可能丢失时引用原话。 */
+  contextQuotes: boolean;
+  /** 安静超过这么多分钟，就认为该复习一下，允许引用。 */
+  contextStaleMinutes: number;
   /**
    * 只用桌宠与控制台的旧白名单判断「有人回来了」。
    * false（缺省）= 任何渠道的人侧事件都算：微信、QQ、B 站、Discord 等扩展都自动生效。
@@ -81,6 +89,10 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   speakTools: 'pet_say, pet_ask, console_send, clawbridge_send',
   speakIgnore: '',
   speakMatchAnywhere: false,
+  dryRun: false,
+  contextAware: true,
+  contextQuotes: true,
+  contextStaleMinutes: 120,
   knownChannelsOnly: false,
   activityIgnore: '',
   onlyWhenIdle: true,
@@ -211,6 +223,32 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           type: 'string',
           title: t.speakIgnoreTitle,
           description: t.speakIgnoreDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.dryRun`]: {
+          type: 'boolean',
+          title: t.dryRunTitle,
+          description: t.dryRunDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.contextAware`]: {
+          type: 'boolean',
+          title: t.contextAwareTitle,
+          description: t.contextAwareDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.contextQuotes`]: {
+          type: 'boolean',
+          title: t.contextQuotesTitle,
+          description: t.contextQuotesDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.contextStaleMinutes`]: {
+          type: 'integer',
+          title: t.contextStaleTitle,
+          description: t.contextStaleDescription,
+          minimum: 10,
+          maximum: 1440,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.speakMatchAnywhere`]: {
