@@ -68,7 +68,9 @@
 | `wakeHint` | true | 睡眠中被吵醒时，搭着这一轮给它一句「你被吵醒了」（超过 90 秒作废） |
 | `wakeGapMinutes` | 30 | 同一场打扰的合并间隔；超过它再来人才算「又被吵醒一次」 |
 | `wakeHintSeconds` | 90 | 「被吵醒」提示的保鲜期（10–300 秒）；超过就作废，不事后补发 |
-| `speakTools` | `pet_say, pet_ask, console_send, clawbridge_send` | 哪些工具算「主动搭话」；退避只统计这些工具被调用又没人回，查资料/整理文件不算 |
+| `speakTools` | 四个内置说话工具 | 额外认定为「搭话」的工具名；一般不用填，插件推过用户消息后它的说话工具会被自动认出来 |
+| `speakIgnore` | 空 | 不算搭话的工具名，优先于自动识别（例如 `minecraft_say`） |
+| `speakMatchAnywhere` | false | 宽松匹配：名字里出现说话动词就算，兜 `sendMsgToWechat` 这种乱名 |
 | `dailyCap` | 12 | 一天（部署时区）最多主动叫醒几次；0 = 不限 |
 | `backoffAfter` | 0 | 连续几次「主动搭话没人回应」后开始拉长间隔；0 = 关闭退避 |
 | `backoffFactor` | 1.5 | 每多一次被无视的搭话，间隔乘多少（1.0–3.0） |
@@ -126,7 +128,7 @@ Coopanion 的扩展装在 **扩展目录**：`<Coopanion 安装目录>\data\exte
 - 叫醒的 `flush` 投递**不会打断正在跑的回合**，只会等轮边界；模型正在跑长工具时会迟到。所以缺省还会检查 `onRunPhase`，只在 Coo 空闲时叫醒。
 - 控制台把本 World 隐藏（静音）时，叫醒事件会被直接丢弃；投递被丢弃（`onEventsSettled` 报 `discarded`）时「今日叫醒」计数会回退，日志里有一条 `作息:叫醒结果`。
 - 状态文件是 `<部署数据目录>/rhythm/state.json`；删掉它只会丢「今日次数/本轮轮次」，不影响安静计时（后者每次从事件库重算）。
-- 对外状态是 `rhythm/status.json`（`sleep.active/endsAt/wokeCount/lastWokeBy` 等，只含非敏感事实），其他插件直接读。
+- 对外状态是 `rhythm/status.json`（`sleep.active/endsAt/wokeCount/lastWokeBy`、`speak.channels`、`today.nudges/cap` 等，只含非敏感事实），其他插件直接读。
 - 提示文案是 `rhythm/messages.json`，首次运行生成，不会被插件覆盖；改完下一条提示就生效（不发提示时不读）。
 - 睡眠时段的两条提示各算一次模型调用（每夜最多两次）；不想花就关 `sleepHint`。
 - 桌宠气泡没有连接（比如桌宠窗口关掉）时，`pet_say` 会回执失败，Coo 仍可以写工作区、设提醒等，不影响插件本身。

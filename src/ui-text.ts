@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 人读的界面文案（World 名、配置组标题与说明、状态灯），中文与英文两版。
  * 与模型读到的正文（model-text.ts）分开：这里只给控制台看。
  */
@@ -68,6 +68,10 @@ export interface RhythmUi {
   /** 「搭话」工具名单的标题与说明（退避只数这些）。 */
   speakToolsTitle: string;
   speakToolsDescription: string;
+  speakIgnoreTitle: string;
+  speakIgnoreDescription: string;
+  speakAnywhereTitle: string;
+  speakAnywhereDescription: string;
   /** 状态灯悬停说明。 */
   lampHint: (info: LampInfo) => string;
   /** 计时关闭时的悬停说明。 */
@@ -116,7 +120,11 @@ const zh: RhythmUi = {
   onlyWhenIdleDescription: '它正在跑模型或执行工具时先不叫醒，等这一轮结束。默认打开，避免打断它手上的事。',
   lampLabel: '叫醒计时',
   speakToolsTitle: '哪些工具算「主动搭话」',
-  speakToolsDescription: '退避只统计这些工具被调用、又没人回应的情况（例如气泡、控制台、微信）。它只是去查资料、整理文件就不算。逗号分隔；装了新的通讯插件就把它的发送工具名加进来。',
+  speakToolsDescription: '额外认定为「搭话」的工具名，逗号分隔。一般不用填：插件推过用户消息时，它的说话工具（如 qq_send）会被自动认出来；命名不按约定的才需要手动补。',
+  speakIgnoreTitle: '不算「搭话」的工具名单',
+  speakIgnoreDescription: '误判时用来排除，逗号分隔，优先于自动识别。例如游戏里喊话的 minecraft_say。',
+  speakAnywhereTitle: '宽松匹配工具名',
+  speakAnywhereDescription: '打开后只要工具名里出现说话动词（send/say/reply…）就算搭话，不管前缀。能兜住 sendMsgToWechat 这种乱名，但误判率更高，默认关。',
   lampHint: (info) => {
     if (info.windowKind === 'sleep') {
       return `在线：睡眠时段（${info.windowEndsAt} 醒）· 今日 ${info.nudgesToday} 次。`;
@@ -180,7 +188,11 @@ const en: RhythmUi = {
   onlyWhenIdleDescription: 'Skips the wake-up while the model or a tool is running, and waits for the turn to end. On by default so it never interrupts itself.',
   lampLabel: 'Wake timer',
   speakToolsTitle: 'Which tools count as "reaching out"',
-  speakToolsDescription: 'The backoff only counts calls to these tools that nobody answered (bubble, console, WeChat, ...). Looking things up or tidying files does not count. Comma-separated; add the send tool of any new chat plugin you install.',
+  speakToolsDescription: 'Extra tool names treated as reaching out, comma-separated. Usually empty: once a plugin has pushed a person-side event, its speak tools (e.g. qq_send) are recognised automatically. Add names only for plugins that do not follow the convention.',
+  speakIgnoreTitle: 'Tools that never count as reaching out',
+  speakIgnoreDescription: 'Comma-separated; wins over everything else. Use it when something like minecraft_say is misread as talking to the person.',
+  speakAnywhereTitle: 'Loose tool-name matching',
+  speakAnywhereDescription: 'When on, any tool name containing a speech verb (send/say/reply…) counts, whatever its prefix. Catches names like sendMsgToWechat but misreads more often. Off by default.',
   lampHint: (info) => {
     if (info.windowKind === 'sleep') {
       return `Online: sleep window (awake at ${info.windowEndsAt}) · ${info.nudgesToday} today.`;

@@ -66,6 +66,11 @@ const DEFAULT_WAKE_HINT_SECONDS = 90;
 /** 算「主动搭话」的工具名；配置是逗号分隔的字符串。 */
 const DEFAULT_SPEAK_TOOLS = 'pet_say, pet_ask, console_send, clawbridge_send';
 
+/** 说话动词：工具名 `<渠道前缀>_<动词>` 时用它判断是不是在跟人说话。 */
+const SPEECH_VERBS: ReadonlySet<string> = new Set([
+  'say', 'send', 'ask', 'reply', 'message', 'post', 'tell', 'chat', 'whisper', 'notify', 'dm',
+]);
+
 /**
  * 旧白名单：`knownChannelsOnly` 打开时只认这些。
  * 只在内置两个对话渠道里成立，装了别的渠道时这就是上游的那个 bug。
@@ -147,6 +152,11 @@ export class RhythmWorld implements World {
   private attempt: { at: number; spoke: boolean } | null = null;
   /** 文案文件的损坏只报一次，别每次提示都刷屏。 */
   private messagesWarned = false;
+  /**
+   * 从事件库学到的聊天渠道前缀（`qq.message` → `qq`）。
+   * 有插件推过用户消息，它的说话工具（如 `qq_send`）就能被自动认出来，不用人工登记。
+   */
+  private channelPrefixes = new Set<string>();
 
   constructor(private readonly opts: RhythmOptions) {
     this.state = {
@@ -290,20 +300,55 @@ export class RhythmWorld implements World {
     if (e.type !== 'response.output_item.added') return;
     const item = e.item;
     if (!item || item.type !== 'function_call' || typeof item.name !== 'string') return;
-    if (!this.isSpeakTool(item.name)) return;
-    if (!this.attempt || this.attempt.spoke) return;
+    const speech = this.isSpeakTool(item.name);
+    // 只在叫醒后的那一轮里记观察日志，别把普通对话也刷满
+    if (!this.attempt) return;
+    this.host?.log.debug('作息:叫醒后的工具调用', { tool: item.name, countsAsSpeech: speech });
+    if (!speech || this.attempt.spoke) return;
     this.attempt.spoke = true;
     this.host?.log.debug('作息:叫醒后开口了', { tool: item.name });
   }
 
-  /** 工具名是否算“主动搭话”（大小写不敏感，逗号分隔）。 */
-  private isSpeakTool(name: string): boolean {
-    const raw = typeof this.opts.cfg.speakTools === 'string' ? this.opts.cfg.speakTools : DEFAULT_SPEAK_TOOLS;
+  /** 记下一个聊天渠道前缀（上限 64 个，够用且防失控）。 */
+  private noteChannel(type: string): void {
+    const prefix = type.split('.')[0]?.toLowerCase() ?? '';
+    if (!prefix || this.channelPrefixes.has(prefix) || this.channelPrefixes.size >= 64) return;
+    this.channelPrefixes.add(prefix);
+  }
+
+  /** 逗号分隔的名单里有没有这个工具名（大小写不敏感）。 */
+  private inNameList(raw: unknown, name: string): boolean {
+    if (typeof raw !== 'string' || raw.trim() === '') return false;
     const target = name.trim().toLowerCase();
     for (const part of raw.split(',')) {
       if (part.trim().toLowerCase() === target) return true;
     }
     return false;
+  }
+
+  /**
+   * 工具名是否算「主动搭话」。三层：
+   * 1. `speakIgnore` 命中 → 不算（优先）；
+   * 2. `speakTools` 显式命中 → 算（补命名不按约定的插件）；
+   * 3. 自动：前缀是学到的聊天渠道（`qq.message` → `qq`），且动词是说话动词 → 算；
+   *    打开 `speakMatchAnywhere` 时，只看名字里有没有说话动词。
+   */
+  private isSpeakTool(name: string): boolean {
+    const lower = name.trim().toLowerCase();
+    if (!lower) return false;
+    if (this.inNameList(this.opts.cfg.speakIgnore, lower)) return false;
+    const explicit = typeof this.opts.cfg.speakTools === 'string' ? this.opts.cfg.speakTools : DEFAULT_SPEAK_TOOLS;
+    if (this.inNameList(explicit, lower)) return true;
+    if (this.opts.cfg.speakMatchAnywhere === true) {
+      for (const verb of SPEECH_VERBS) if (lower.includes(verb)) return true;
+      return false;
+    }
+    const underscore = lower.indexOf('_');
+    if (underscore <= 0) return false;
+    const prefix = lower.slice(0, underscore);
+    if (!this.channelPrefixes.has(prefix)) return false;
+    const verb = lower.slice(underscore + 1).split('_')[0];
+    return SPEECH_VERBS.has(verb);
   }
 
   /**
@@ -497,6 +542,7 @@ export class RhythmWorld implements World {
     try {
       for (const event of host.store.range({ limit: SCAN_LIMIT, origin: 'external' })) {
         if (!this.isPersonActivity(event)) continue;
+        this.noteChannel(event.type);
         const when = Date.parse(event.ts);
         if (Number.isFinite(when) && when > at) {
           at = when;
@@ -849,6 +895,7 @@ export class RhythmWorld implements World {
         lastWokeBy: this.state.sleep.lastWokeBy,
       },
       today: { nudges: this.state.nudgesToday, cap: limits.dailyCap },
+      speak: { channels: [...this.channelPrefixes].sort(), unanswered: this.state.unanswered },
     });
     if (error) this.host?.log.warn('作息:公开状态写不进去', { error });
   }

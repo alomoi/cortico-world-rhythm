@@ -152,6 +152,8 @@ console.log('config defaults:');
   check('wakeGapMinutes defaults to 30', d.wakeGapMinutes === 30);
   check('wakeHintSeconds defaults to 90', d.wakeHintSeconds === 90);
   check('speakTools defaults to the four known send tools', /pet_say/.test(d.speakTools) && /clawbridge_send/.test(d.speakTools));
+  check('speakIgnore defaults empty', d.speakIgnore === '');
+  check('loose speak matching defaults off', d.speakMatchAnywhere === false);
 }
 
 // ── 1. 安静计时与第一次叫醒 ────────────────────────────────────────────────
@@ -777,6 +779,87 @@ console.log('only configured speak tools count:');
   custom.world.tick();
   check('and counts the tool it names', custom.world.state.unanswered === 1);
   await custom.world.stop();
+}
+
+console.log('channels are learned from person-side events:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 10, backoffAfter: 1 });
+  await boot(h);
+  advance(1);
+  addEvent(h, 'qq.message');   // 学到一个新渠道前缀 qq
+  h.world.tick();
+  advance(15);
+  h.world.tick();
+  check('the learned prefix is remembered', h.world.channelPrefixes.has('qq'));
+  tapTool(h, 'qq_send');       // 前缀 qq + 动词 send → 自动认定为搭话
+  advance(10);
+  h.world.tick();
+  check('a learnable plugin tool counts without configuration', h.world.state.unanswered === 1, String(h.world.state.unanswered));
+  await h.world.stop();
+}
+
+console.log('channel prefix alone is not enough:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 10, backoffAfter: 1 });
+  await boot(h);
+  advance(1);
+  addEvent(h, 'qq.message');
+  h.world.tick();
+  advance(15);
+  h.world.tick();
+  tapTool(h, 'qq_list');       // 渠道对，动词不是说话
+  advance(10);
+  h.world.tick();
+  check('a non-speech tool on a known channel does not count', h.world.state.unanswered === 0);
+
+  tapTool(h, 'web_search');    // 前缀没学到，动词也不是说话
+  advance(10);
+  h.world.tick();
+  check('an unknown channel with a non-speech verb does not count', h.world.state.unanswered === 0);
+  await h.world.stop();
+}
+
+console.log('explicit list and ignore list win:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 10, backoffAfter: 1, speakTools: 'my_thing' });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  tapTool(h, 'my_thing');      // 命名完全不按约定，但进了显式名单
+  advance(10);
+  h.world.tick();
+  check('an explicitly listed tool counts', h.world.state.unanswered === 1);
+  await h.world.stop();
+
+  const ignored = harness({ repeatMinutes: 10, backoffAfter: 1, speakIgnore: 'qq_send' });
+  await boot(ignored);
+  advance(1);
+  addEvent(ignored, 'qq.message');
+  ignored.world.tick();
+  advance(15);
+  ignored.world.tick();
+  tapTool(ignored, 'qq_send'); // 本可自动识别，但被忽略名单否掉
+  advance(10);
+  ignored.world.tick();
+  check('the ignore list wins over auto-detection', ignored.world.state.unanswered === 0);
+  await ignored.world.stop();
+}
+
+console.log('loose matching catches odd names:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 10, backoffAfter: 1, speakMatchAnywhere: true });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  tapTool(h, 'sendMsgToWechat');
+  advance(10);
+  h.world.tick();
+  check('a verb anywhere in the name counts in loose mode', h.world.state.unanswered === 1);
+  await h.world.stop();
 }
 
 console.log('a reply in the same turn clears the attempt:');

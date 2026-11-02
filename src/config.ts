@@ -43,8 +43,12 @@ export interface RhythmConfigSection extends WorldSection {
   wakeGapMinutes: number;
   /** 「被吵醒」提示的保鲜期（秒）：超过它就作废，不事后补发。 */
   wakeHintSeconds: number;
-  /** 算「搭话」的工具名，逗号分隔；只有这些工具被调用才计入退避。 */
+  /** 额外认定为「搭话」的工具名，逗号分隔；自动学习认不出的插件用它补。 */
   speakTools: string;
+  /** 不算「搭话」的工具名，逗号分隔；误判时用它排除（优先于其他规则）。 */
+  speakIgnore: string;
+  /** 宽松匹配：工具名里出现说话动词就算，不管前缀（默认关，误判率更高）。 */
+  speakMatchAnywhere: boolean;
   /**
    * 只用桌宠与控制台的旧白名单判断「有人回来了」。
    * false（缺省）= 任何渠道的人侧事件都算：微信、QQ、B 站、Discord 等扩展都自动生效。
@@ -75,6 +79,8 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   wakeGapMinutes: 30,
   wakeHintSeconds: 90,
   speakTools: 'pet_say, pet_ask, console_send, clawbridge_send',
+  speakIgnore: '',
+  speakMatchAnywhere: false,
   knownChannelsOnly: false,
   activityIgnore: '',
   onlyWhenIdle: true,
@@ -199,6 +205,18 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           type: 'string',
           title: t.speakToolsTitle,
           description: t.speakToolsDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.speakIgnore`]: {
+          type: 'string',
+          title: t.speakIgnoreTitle,
+          description: t.speakIgnoreDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.speakMatchAnywhere`]: {
+          type: 'boolean',
+          title: t.speakAnywhereTitle,
+          description: t.speakAnywhereDescription,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.knownChannelsOnly`]: {
