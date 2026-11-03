@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 人读的界面文案（World 名、配置组标题与说明、状态灯），中文与英文两版。
  * 与模型读到的正文（model-text.ts）分开：这里只给控制台看。
  */
@@ -74,6 +74,8 @@ export interface RhythmUi {
   speakIgnoreDescription: string;
   speakAnywhereTitle: string;
   speakAnywhereDescription: string;
+  channelAliasesTitle: string;
+  channelAliasesDescription: string;
   dryRunTitle: string;
   dryRunDescription: string;
   contextAwareTitle: string;
@@ -135,6 +137,8 @@ const zh: RhythmUi = {
   speakIgnoreDescription: '误判时用来排除，逗号分隔，优先于自动识别。例如游戏里喊话的 minecraft_say。',
   speakAnywhereTitle: '宽松匹配工具名',
   speakAnywhereDescription: '打开后只要工具名里出现说话动词（send/say/reply…）就算搭话，不管前缀。能兜住 sendMsgToWechat 这种乱名，但误判率更高，默认关。',
+  channelAliasesTitle: '渠道别名',
+  channelAliasesDescription: '把事件前缀换成更好读的名字，例如 clawbridge=微信、qq=QQ；只影响提示文案里的渠道名。',
   dryRunTitle: '影子模式（只算不发）',
   dryRunDescription: '打开后照常计算什么时候该叫、正文长什么样，但只写日志和状态文件，不投递任何事件。用来在真机上验证排程而不打扰桌宠。',
   contextAwareTitle: '叫醒时带上最近对话的事实',
@@ -212,6 +216,8 @@ const en: RhythmUi = {
   speakIgnoreDescription: 'Comma-separated; wins over everything else. Use it when something like minecraft_say is misread as talking to the person.',
   speakAnywhereTitle: 'Loose tool-name matching',
   speakAnywhereDescription: 'When on, any tool name containing a speech verb (send/say/reply…) counts, whatever its prefix. Catches names like sendMsgToWechat but misreads more often. Off by default.',
+  channelAliasesTitle: 'Channel aliases',
+  channelAliasesDescription: 'Readable names for event prefixes, e.g. clawbridge=WeChat, qq=QQ. Only affects the wording of prompts.',
   dryRunTitle: 'Shadow mode (plan only)',
   dryRunDescription: 'Computes when it would wake and what it would say, but only writes logs and the status file - nothing is delivered. Use it to verify the schedule on the real machine without disturbing the pet.',
   contextAwareTitle: 'Tell the bot the recent facts',

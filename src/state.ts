@@ -10,7 +10,7 @@
  * 文件位置：`<dataDir>/rhythm/state.json`。写入用「临时文件 + rename」的原子替换，
  * 坏文件不删（下次会被覆盖），只在日志里报一句。
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 /** 落盘的状态；字段都可缺省容忍（手改坏了也不至于让 World 起不来）。 */
@@ -162,16 +162,35 @@ export function loadState(file: string, dayKey: string): { state: RhythmState; e
   return { state };
 }
 
-/** 原子写一份 JSON（临时文件 + rename）；失败只返回文案。 */
+/**
+ * 原子写一份 JSON（临时文件 + rename）。
+ *
+ * Windows 上 rename 偶尔会撞上 EPERM（杀毒、索引器或别的进程短暂打开了目标文件），
+ * 实测凌晨 21:29 就发生过一次。这里重试三次；仍失败就退回直接覆盖写——原子性没了，
+ * 但「状态没写进去」比「临时丢了原子性」更糟。两条路都失败才返回错误。
+ */
 export function writeJsonAtomic(file: string, value: unknown): { error?: string } {
+  const payload = `${JSON.stringify(value, null, 2)}\n`;
+  const tmp = `${file}.tmp`;
+  let lastError = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(tmp, payload, 'utf8');
+      renameSync(tmp, file);
+      return {};
+    } catch (error) {
+      lastError = message(error);
+      try { rmSync(tmp, { force: true }); } catch { /* 清理失败无所谓 */ }
+      // 同步小睡 40ms 再试；不引入定时器，避免打乱调用方的时序
+      try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40); } catch { /* 不支持就立刻重试 */ }
+    }
+  }
   try {
-    mkdirSync(dirname(file), { recursive: true });
-    const tmp = `${file}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-    renameSync(tmp, file);
+    writeFileSync(file, payload, 'utf8');
     return {};
   } catch (error) {
-    return { error: message(error) };
+    return { error: `${message(error)}（rename 失败: ${lastError}）` };
   }
 }
 

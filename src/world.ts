@@ -154,7 +154,7 @@ export class RhythmWorld implements World {
    * 最近一次叫醒之后的那一轮：它有没有对外开口。
    * 只有「开了口又没人回」才计入退避；安静地结束、或去查资料都不算。
    */
-  private attempt: { at: number; spoke: boolean } | null = null;
+  private attempt: { at: number; spoke: boolean; replied: boolean } | null = null;
   /** 从流里抓到的「它最近说了什么」（覆盖微信这类不落 self 事件的渠道）。 */
   private lastSaid: { at: number; text: string } | null = null;
   /** 流里的 function_call 名字，等参数到齐后据此识别说话工具。 */
@@ -332,7 +332,9 @@ export class RhythmWorld implements World {
       this.host?.log.debug('作息:叫醒后的工具调用', { tool: item.name, countsAsSpeech: speech });
       if (!speech || this.attempt.spoke) return;
       this.attempt.spoke = true;
-      this.host?.log.debug('作息:叫醒后开口了', { tool: item.name });
+      // 这一轮之前/期间有人说过话 → 它是在回话，不是主动搭话，退避不计
+      this.attempt.replied = this.latestPersonActivity().at > this.attempt.at;
+      this.host?.log.debug('作息:叫醒后开口了', { tool: item.name, replied: this.attempt.replied });
       return;
     }
 
@@ -383,6 +385,17 @@ export class RhythmWorld implements World {
     return false;
   }
 
+  /** 渠道别名：`clawbridge.message` → `微信`；没有别名就用前缀。 */
+  private channelLabel(type: string): string {
+    const raw = typeof this.opts.cfg.channelAliases === 'string' ? this.opts.cfg.channelAliases : '';
+    const prefix = (type.split('.')[0] ?? '').toLowerCase();
+    for (const part of raw.split(',')) {
+      const [key, value] = part.split('=').map((s) => s?.trim() ?? '');
+      if (key && value && key.toLowerCase() === prefix) return value;
+    }
+    return prefix || type;
+  }
+
   /**
    * 工具名是否算「主动搭话」。三层：
    * 1. `speakIgnore` 命中 → 不算（优先）；
@@ -409,6 +422,25 @@ export class RhythmWorld implements World {
   }
 
   /**
+   * 渠道有没有报过「这条没发出去」。
+   * 约定：任何 World 都可以推一条 `<渠道>.send-failed` 事件（deliver:false 即可），
+   * 我们的退避就不把这一轮算作「没人理」。目前还没有插件发它——见 docs 里的约定。
+   */
+  private sendFailedSince(at: number): string | null {
+    let events: EventEnvelope[] = [];
+    try {
+      events = this.host?.store.range({ limit: SCAN_LIMIT }) ?? [];
+    } catch {
+      events = [];
+    }
+    for (const event of events) {
+      if (!event.type.endsWith('.send-failed')) continue;
+      const when = Date.parse(event.ts);
+      if (Number.isFinite(when) && when > at) return String((event.meta as { tool?: unknown } | undefined)?.tool ?? event.type);
+    }
+    return null;
+  }
+  /**
    * 结算上一轮叫醒：坐下来数一数，“这次它到底有没有主动开口”。
    * - 人在这期间说过话：算被回应，清零；
    * - 它调用了说话工具、又没人回应：`unanswered += 1`，退避据此变稀；
@@ -428,6 +460,17 @@ export class RhythmWorld implements World {
     }
     if (!attempt.spoke) {
       this.host?.log.debug('作息:这一轮没有对外搭话，不计入退避', { round: this.rounds });
+      return;
+    }
+    // 它是在回话（那一轮之前/期间有人说过话），不是主动搭话
+    if (attempt.replied) {
+      this.host?.log.debug('作息:这一轮是在回话，不计入退避', { round: this.rounds });
+      return;
+    }
+    // 渠道自己报了发送失败（例如微信 24 小时窗口过期）：不算「没人理」
+    const failed = this.sendFailedSince(attempt.at);
+    if (failed) {
+      this.host?.log.info('作息:搭话发送失败，不计入退避', { tool: failed });
       return;
     }
     this.state.unanswered += 1;
@@ -790,6 +833,7 @@ export class RhythmWorld implements World {
     this.state.sleep.lastCountedAt = new Date(latest.at).toISOString();
     host.log.info('作息:被吵醒', {
       by: latest.type,
+      byLabel: this.channelLabel(latest.type),
       wokeCount: this.state.sleep.wokeCount,
       sinceLastWokeMin: countedAt > 0 ? Math.round((latest.at - countedAt) / 60_000) : null,
     });
@@ -806,7 +850,7 @@ export class RhythmWorld implements World {
       host.log.warn('作息:被吵醒记录没写进去', { error });
     });
     if (limits.wakeHint) {
-      this.sendHint('woken', now, { by: latest.type, count: this.state.sleep.wokeCount });
+      this.sendHint('woken', now, { by: this.channelLabel(latest.type), count: this.state.sleep.wokeCount });
     }
     this.persist();
   }
@@ -881,7 +925,7 @@ export class RhythmWorld implements World {
     // 先拼正文（此刻的轮次是「这一次」），再自增
     const text = this.composeNudge(now, latest, this.rounds + 1);
     this.rounds += 1;
-    this.attempt = { at: now, spoke: false };
+    this.attempt = { at: now, spoke: false, replied: false };
     this.lastNudgeAt = now;
     this.state.nudgesToday += 1;
     this.suppressedUntil = 0;

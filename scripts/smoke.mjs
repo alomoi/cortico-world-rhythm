@@ -1034,7 +1034,7 @@ console.log('the woken hint expires:');
   h.world.tick();
   const hint = h.hints.find((x) => x.spec.meta.kind === 'woken');
   check('a fresh woken hint renders', typeof hint.spec.render() === 'string');
-  check('its text names the source', String(hint.spec.render()).includes('qq.message'));
+  check('its text names the source with the alias', String(hint.spec.render()).includes('QQ'));
   advance(2);
   check('the woken hint is dropped after 90 seconds', hint.spec.render() === null);
 
@@ -1240,6 +1240,48 @@ console.log('dry run:');
   advance(14);
   h.world.tick();
   check('shadow mode does not nudge on every tick', h.pushes.length === 0);
+  await h.world.stop();
+}
+
+// ── 28. 渠道别名与退避的两条例外 ─────────────────────────────────────────
+console.log('channel aliases:');
+{
+  const h = harness();
+  await boot(h);
+  check('a known prefix maps to a readable name', h.world.channelLabel('clawbridge.message') === '微信');
+  check('unknown prefixes fall back to the prefix', h.world.channelLabel('foo.message') === 'foo');
+  await h.world.stop();
+}
+
+console.log('a reply is not an outreach attempt:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ backoffAfter: 1, repeatMinutes: 10 });
+  await boot(h);
+  check('a replied turn does not count', (() => {
+    h.world.attempt = { at: clock, spoke: true, replied: true };
+    h.world.settleAttempt();
+    return h.world.state.unanswered === 0;
+  })());
+  check('an unanswered outreach still counts', (() => {
+    h.world.attempt = { at: clock, spoke: true, replied: false };
+    h.world.settleAttempt();
+    return h.world.state.unanswered === 1;
+  })());
+  await h.world.stop();
+}
+
+console.log('a channel-reported send failure is not counted:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ backoffAfter: 1, repeatMinutes: 10 });
+  await boot(h);
+  h.world.attempt = { at: clock, spoke: true, replied: false };
+  advance(1);
+  addEvent(h, 'clawbridge.send-failed');
+  h.events[h.events.length - 1].meta = { tool: 'clawbridge_send' };
+  h.world.settleAttempt();
+  check('a failed send does not count as ignored', h.world.state.unanswered === 0, String(h.world.state.unanswered));
   await h.world.stop();
 }
 
