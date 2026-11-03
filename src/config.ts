@@ -61,6 +61,14 @@ export interface RhythmConfigSection extends WorldSection {
   channelAliases: string;
   /** 叫醒后核对工具回执：据实排除发送失败的那一轮。 */
   verifySpeakReceipts: boolean;
+  /** 叫醒时探测锁屏/空闲（仅 Windows 生效），把结果写进正文。 */
+  awayDetection: boolean;
+  /** 超过这么多分钟无输入，就提示「可能在忙」。 */
+  awayIdleMinutes: number;
+  /** 锁屏期间跳过叫醒（解锁后下一拍再说）。 */
+  pauseWhenLocked: boolean;
+  /** 是否把探测结果写进叫醒正文。 */
+  awayHint: boolean;
   /**
    * 只用桌宠与控制台的旧白名单判断「有人回来了」。
    * false（缺省）= 任何渠道的人侧事件都算：微信、QQ、B 站、Discord 等扩展都自动生效。
@@ -99,6 +107,10 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   contextStaleMinutes: 120,
   channelAliases: 'clawbridge=微信, desktop-pet=桌宠, console=控制台, coopanion=应用, qq=QQ',
   verifySpeakReceipts: true,
+  awayDetection: true,
+  awayIdleMinutes: 10,
+  pauseWhenLocked: false,
+  awayHint: true,
   knownChannelsOnly: false,
   activityIgnore: '',
   onlyWhenIdle: true,
@@ -241,6 +253,32 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           type: 'boolean',
           title: t.verifyReceiptsTitle,
           description: t.verifyReceiptsDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.awayDetection`]: {
+          type: 'boolean',
+          title: t.awayDetectionTitle,
+          description: t.awayDetectionDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.awayIdleMinutes`]: {
+          type: 'integer',
+          title: t.awayIdleTitle,
+          description: t.awayIdleDescription,
+          minimum: 1,
+          maximum: 720,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.pauseWhenLocked`]: {
+          type: 'boolean',
+          title: t.pauseLockedTitle,
+          description: t.pauseLockedDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.awayHint`]: {
+          type: 'boolean',
+          title: t.awayHintTitle,
+          description: t.awayHintDescription,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.dryRun`]: {

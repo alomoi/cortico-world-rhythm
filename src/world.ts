@@ -40,6 +40,7 @@ import { rhythmConfigGroup, RHYTHM_ID, type RhythmConfigSection } from './config
 import { fillTemplate, loadMessages, messagesPath, type HintKind } from './messages.ts';
 import { buildThread, sanitizeQuote } from './context.ts';
 import { nudgeText, type ModelLanguage, type NudgeQuote } from './model-text.ts';
+import { detectPresence, UNKNOWN_PRESENCE, type Presence } from './presence.ts';
 import { loadState, localDayKey, saveState, stateFilePath, writeJsonAtomic, type RhythmState } from './state.ts';
 import { uiText, type LampInfo } from './ui-text.ts';
 import { formatClock, matchWindow, minutesOfDay, parseWindowList, type ClockWindow } from './windows.ts';
@@ -105,6 +106,8 @@ export interface RhythmOptions {
   dataDir: string;
   /** 模型文本语言；每条事件渲染时现取。 */
   language: () => ModelLanguage;
+  /** 主人状态探测；测试可注入，缺省用本机 Windows 探测。 */
+  detectPresence?: (timeoutMs?: number) => Promise<Presence>;
 }
 
 interface Limits {
@@ -126,6 +129,10 @@ interface Limits {
   contextAware: boolean;
   contextQuotes: boolean;
   contextStaleMinutes: number;
+  awayDetection: boolean;
+  awayIdleMinutes: number;
+  pauseWhenLocked: boolean;
+  awayHint: boolean;
   knownChannelsOnly: boolean;
   onlyWhenIdle: boolean;
 }
@@ -166,6 +173,14 @@ export class RhythmWorld implements World {
   private readonly streamCallNames = new Map<string, string>();
   /** 上下文交接发生的时刻；晚于最后一次对话时，下一次叫醒值得复习一下。 */
   private handoffAt = 0;
+  /** 最近一次主人状态探测（60 秒缓存，避免每次 tick 都 spawn）。 */
+  private presenceCache: { at: number; presence: Presence } | null = null;
+  /** 正在进行的探测，避免重复 spawn。 */
+  private presencePending: Promise<Presence> | null = null;
+  /** 正在等探测结果再叫醒，避免同一拍重复安排。 */
+  private nudgePending = false;
+  /** 当前这次「探测 + 叫醒」的 Promise（测试等待用）。 */
+  private nudgePromise: Promise<void> | null = null;
   /** 文案文件的损坏只报一次，别每次提示都刷屏。 */
   private messagesWarned = false;
   /**
@@ -594,6 +609,10 @@ export class RhythmWorld implements World {
       contextAware: cfg.contextAware !== false,
       contextQuotes: cfg.contextQuotes !== false,
       contextStaleMinutes: Math.floor(numberIn(cfg.contextStaleMinutes, 120, 10, 1440)),
+      awayDetection: cfg.awayDetection !== false,
+      awayIdleMinutes: Math.floor(numberIn(cfg.awayIdleMinutes, 10, 1, 720)),
+      pauseWhenLocked: cfg.pauseWhenLocked === true,
+      awayHint: cfg.awayHint !== false,
       knownChannelsOnly: cfg.knownChannelsOnly === true,
       onlyWhenIdle: cfg.onlyWhenIdle !== false,
     };
@@ -787,14 +806,18 @@ export class RhythmWorld implements World {
     const due = this.dueAt(limits);
     if (due === null || now < due) return;
 
-    if (limits.dryRun) {
-      this.shadowNudge(now, latest);
-      this.suppressedUntil = now + this.intervalMinutes(limits) * 60_000;
-      return;
-    }
     if (limits.skipChance > 0 && Math.random() < limits.skipChance) {
       this.suppressedUntil = now + this.intervalMinutes(limits) * 60_000;
       host.log.debug('作息:这一次按概率跳过了', { skipChance: limits.skipChance, rounds: this.rounds });
+      return;
+    }
+    if (limits.awayDetection) {
+      this.nudgeAfterProbe(now, latest);
+      return;
+    }
+    if (limits.dryRun) {
+      this.shadowNudge(now, latest);
+      this.suppressedUntil = now + this.intervalMinutes(limits) * 60_000;
       return;
     }
     this.nudge(now, latest);
@@ -986,14 +1009,78 @@ export class RhythmWorld implements World {
     this.persist();
   }
 
-  private nudge(now: number, latest: { at: number; type: string }): void {
+  /** 给状态文件用的一句话：locked / idle / active / unknown。 */
+  private presenceState(presence: Presence): 'locked' | 'idle' | 'active' | 'unknown' {
+    if (presence.locked === true) return 'locked';
+    if (presence.locked === null && presence.idleSeconds === null) return 'unknown';
+    if (presence.idleSeconds !== null && presence.idleSeconds >= this.limits().awayIdleMinutes * 60) return 'idle';
+    return 'active';
+  }
+
+  /** 取一次主人状态：60 秒缓存，失败按 unknown；不在 Windows 上直接 unknown。 */
+  private async currentPresence(): Promise<Presence> {
+    const cached = this.presenceCache;
+    if (cached && Date.now() - cached.at < 60_000) return cached.presence;
+    if (!this.presencePending) {
+      const detect = this.opts.detectPresence
+        ?? (typeof process !== 'undefined' && process.platform === 'win32' ? detectPresence : async () => UNKNOWN_PRESENCE());
+      this.presencePending = Promise.resolve()
+        .then(() => detect(2000))
+        .catch(() => UNKNOWN_PRESENCE())
+        .then((presence) => {
+          this.presenceCache = { at: Date.now(), presence };
+          this.presencePending = null;
+          this.host?.log.debug('作息:探测主人状态', {
+            locked: presence.locked,
+            idleSeconds: presence.idleSeconds,
+          });
+          return presence;
+        });
+    }
+    return this.presencePending;
+  }
+
+  /**
+   * 到点后先探测再叫醒。探测是异步的（几百毫秒），所以重新检查一遍条件，
+   * 避免这期间人回来了、进了睡眠时段或到了上限还叫。
+   */
+  private nudgeAfterProbe(now: number, latest: { at: number; type: string }): void {
+    if (this.nudgePending) return;
+    this.nudgePending = true;
+    this.nudgePromise = this.currentPresence().then((presence) => {
+      this.nudgePending = false;
+      const limits = this.limits();
+      if (this.currentWindow(Date.now())) return;
+      if (limits.onlyWhenIdle && this.phaseState !== 'idle') return;
+      if (limits.dailyCap > 0 && this.state.nudgesToday >= limits.dailyCap) return;
+      if (limits.maxRounds > 0 && this.rounds >= limits.maxRounds) return;
+      if (presence.locked === true && limits.pauseWhenLocked) {
+        this.suppressedUntil = Date.now() + 60_000;
+        this.host?.log.info('作息:屏幕锁着，跳过这次叫醒（解锁后再说）');
+        return;
+      }
+      if (limits.dryRun) {
+        this.shadowNudge(Date.now(), latest, presence);
+        this.suppressedUntil = Date.now() + this.intervalMinutes(limits) * 60_000;
+        return;
+      }
+      this.nudge(Date.now(), latest, presence);
+    }).catch((error: unknown) => {
+      this.nudgePending = false;
+      this.host?.log.warn('作息:探测流程出错，按正常叫醒', { error });
+      this.nudge(Date.now(), latest);
+    }).finally(() => {
+      this.nudgePromise = null;
+    });
+  }
+  private nudge(now: number, latest: { at: number; type: string }, presence?: Presence): void {
     const host = this.host;
     if (!host) return;
     const limits = this.limits();
     const again = this.rounds > 0;
     this.settleAttempt();
     // 先拼正文（此刻的轮次是「这一次」），再自增
-    const text = this.composeNudge(now, latest, this.rounds + 1);
+    const text = this.composeNudge(now, latest, this.rounds + 1, presence);
     this.rounds += 1;
     this.attempt = { at: now, spoke: false, replied: false, calls: [] };
     this.lastNudgeAt = now;
@@ -1026,7 +1113,7 @@ export class RhythmWorld implements World {
   }
 
   /** 影子模式：算出正文、写日志与状态，但不投递、不计数、不占用上限。 */
-  private shadowNudge(now: number, latest: { at: number; type: string }): void {
+  private shadowNudge(now: number, latest: { at: number; type: string }, presence?: Presence): void {
     const host = this.host;
     if (!host) return;
     const limits = this.limits();
@@ -1037,7 +1124,7 @@ export class RhythmWorld implements World {
       nudgesToday: this.state.nudgesToday,
       shadow: true,
       dueAt: due === null ? null : new Date(due).toISOString(),
-      text: this.composeNudge(now, latest, this.rounds + 1),
+      text: this.composeNudge(now, latest, this.rounds + 1, presence),
     });
     this.writeStatus();
   }
@@ -1046,7 +1133,7 @@ export class RhythmWorld implements World {
    * 拼出叫醒正文：默认只给事实；只有在「上下文可能丢了」（交接后、或安静超过阈值）且允许时，
    * 才带一两句净化过的原话引用。
    */
-  private composeNudge(now: number, latest: { at: number; type: string }, round: number): string {
+  private composeNudge(now: number, latest: { at: number; type: string }, round: number, presence?: Presence): string {
     const limits = this.limits();
     const language = this.opts.language();
     const quietMinutes = Math.max(1, Math.round((now - this.lastActivitySeen) / 60_000));
@@ -1076,12 +1163,21 @@ export class RhythmWorld implements World {
       }
     }
 
+    let away: { kind: 'locked' | 'idle'; idleMinutes?: number } | null = null;
+    if (limits.awayHint && presence) {
+      if (presence.locked === true) away = { kind: 'locked' };
+      else if (presence.idleSeconds !== null && presence.idleSeconds >= limits.awayIdleMinutes * 60) {
+        away = { kind: 'idle', idleMinutes: Math.round(presence.idleSeconds / 60) };
+      }
+    }
+
     return nudgeText(language, {
       at: shortTime(this.opts.timezone, new Date(now)),
       quietMinutes,
       again: round > 1,
       round,
       unanswered,
+      away,
       quoteUser,
       quoteSelf,
     });
@@ -1154,6 +1250,11 @@ export class RhythmWorld implements World {
       },
       today: { nudges: this.state.nudgesToday, cap: limits.dailyCap },
       speak: { channels: [...this.channelPrefixes].sort(), unanswered: this.state.unanswered },
+      presence: this.presenceCache ? {
+        state: this.presenceState(this.presenceCache.presence),
+        locked: this.presenceCache.presence.locked,
+        idleSeconds: this.presenceCache.presence.idleSeconds,
+      } : null,
       plan: {
         nextNudgeAt: (() => { const due = this.dueAt(limits); return due === null ? null : new Date(due).toISOString(); })(),
         inWindow: windowNow?.kind ?? null,

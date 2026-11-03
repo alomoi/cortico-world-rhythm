@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 人读的界面文案（World 名、配置组标题与说明、状态灯），中文与英文两版。
  * 与模型读到的正文（model-text.ts）分开：这里只给控制台看。
  */
@@ -78,6 +78,14 @@ export interface RhythmUi {
   channelAliasesDescription: string;
   verifyReceiptsTitle: string;
   verifyReceiptsDescription: string;
+  awayDetectionTitle: string;
+  awayDetectionDescription: string;
+  awayIdleTitle: string;
+  awayIdleDescription: string;
+  pauseLockedTitle: string;
+  pauseLockedDescription: string;
+  awayHintTitle: string;
+  awayHintDescription: string;
   dryRunTitle: string;
   dryRunDescription: string;
   contextAwareTitle: string;
@@ -145,6 +153,14 @@ const zh: RhythmUi = {
   verifyReceiptsDescription: '叫醒后如果它调用了发送工具，去会话记录里核对回执：回执写着失败（如微信 24 小时窗口过期），这一轮就不计入退避。默认开。',
   dryRunTitle: '影子模式（只算不发）',
   dryRunDescription: '打开后照常计算什么时候该叫、正文长什么样，但只写日志和状态文件，不投递任何事件。用来在真机上验证排程而不打扰桌宠。',
+  awayDetectionTitle: '探测主人在不在电脑前',
+  awayDetectionDescription: '叫醒时查一次锁屏与键鼠空闲（仅 Windows），把结果写进正文；探测失败就当不知道。',
+  awayIdleTitle: '多久没输入算「可能在忙」',
+  awayIdleDescription: '超过这么多分钟没有键鼠输入，就在正文里提示「可能在忙」。缺省 10 分钟。',
+  pauseLockedTitle: '锁屏时不叫醒',
+  pauseLockedDescription: '打开后，屏幕锁着时跳过这次叫醒，等解锁后的下一拍再说。默认关——锁屏时它可能更想用微信找你。',
+  awayHintTitle: '把探测结果写进正文',
+  awayHintDescription: '关掉后只写日志、不改正文。',
   contextAwareTitle: '叫醒时带上最近对话的事实',
   contextAwareDescription: '告诉 Coo「安静了多久、它上次开口有没有被接」。默认开；关掉就回到最朴素的叫醒。',
   contextQuotesTitle: '上下文可能丢失时引用原话',
@@ -226,6 +242,14 @@ const en: RhythmUi = {
   verifyReceiptsDescription: 'After a wake-up, checks the tool receipt in the session record. A failed send (e.g. the WeChat 24h window expired) does not count towards backoff. On by default.',
   dryRunTitle: 'Shadow mode (plan only)',
   dryRunDescription: 'Computes when it would wake and what it would say, but only writes logs and the status file - nothing is delivered. Use it to verify the schedule on the real machine without disturbing the pet.',
+  awayDetectionTitle: 'Detect whether the person is at the computer',
+  awayDetectionDescription: 'Checks lock state and idle time once per wake-up (Windows only) and puts the result in the prompt. A failed probe counts as unknown.',
+  awayIdleTitle: 'Idle minutes before saying the person may be busy',
+  awayIdleDescription: 'With no mouse or keyboard input for this long, the prompt mentions it. 10 minutes by default.',
+  pauseLockedTitle: 'Do not wake while the screen is locked',
+  pauseLockedDescription: 'Skips the wake-up while locked and waits for the next tick after unlocking. Off by default: it may prefer WeChat when you are away.',
+  awayHintTitle: 'Put the probe result in the prompt',
+  awayHintDescription: 'When off, the result only goes to the log.',
   contextAwareTitle: 'Tell the bot the recent facts',
   contextAwareDescription: 'Includes how long it has been quiet and whether its last outreach was answered. On by default; off gives the plain wake-up.',
   contextQuotesTitle: 'Quote the last lines when context may be stale',

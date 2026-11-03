@@ -1,6 +1,6 @@
-# P5 候选功能 · 把「主人在不在电脑前」交给插件
+﻿# P5 候选功能 · 把「主人在不在电脑前」交给插件
 
-> 状态：**可行性已验证（Coo 已在自己跑同类脚本），待实现**；排在本次实机测试之后。
+> 状态：**代码已实现（2026-11-03），本地 228 条断言全绿；尚未部署**，按规则等当前实机测试收尾后随批次上。
 > 来源：主人 2026-11-02 的说明 + Coo 自己写的 `workspace/partner/idle.ps1` / `probe.cs` /
 > `self-initiated-chat.md`（只读查看，未改动）。
 
@@ -90,7 +90,7 @@ Coo 的做法（见 `self-initiated-chat.md`）：
 
 | 键 | 类型 | 缺省 | 说明 |
 |---|---|---|---|
-| `awayDetection` | boolean | **true**（仅 Windows 生效） | 叫醒时探测锁屏/空闲，并把事实写进正文 |
+| `awayDetection` | boolean | **true**（仅 Windows 生效，非 Windows 自动 unknown） | 叫醒时探测锁屏/空闲，并把事实写进正文 |
 | `awayIdleMinutes` | integer | 10 | 超过这么多分钟无输入，正文提示「可能不在」 |
 | `pauseWhenLocked` | boolean | **false** | 打开后锁屏期间跳过叫醒（解锁后补） |
 | `awayHint` | boolean | true | 是否把探测结果写进正文（关掉只写日志） |

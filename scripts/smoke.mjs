@@ -71,6 +71,11 @@ const NEW_CASE_DEFAULTS = {
   activityIgnore: '',
   // 大多数用例只想验时间逻辑，默认把空闲门控关掉；门控另有专门用例。
   onlyWhenIdle: false,
+  // 探测默认关，保持旧用例同步；专门用例里显式打开。
+  awayDetection: false,
+  awayIdleMinutes: 10,
+  pauseWhenLocked: false,
+  awayHint: true,
 };
 
 function harness(cfgOverrides = {}, opts = {}) {
@@ -156,6 +161,10 @@ console.log('config defaults:');
   check('contextAware defaults on', d.contextAware === true);
   check('contextQuotes defaults on', d.contextQuotes === true);
   check('contextStaleMinutes defaults to 120', d.contextStaleMinutes === 120);
+  check('awayDetection defaults on', d.awayDetection === true);
+  check('awayIdleMinutes defaults to 10', d.awayIdleMinutes === 10);
+  check('pauseWhenLocked defaults off', d.pauseWhenLocked === false);
+  check('awayHint defaults on', d.awayHint === true);
   check('speakTools defaults to the four known send tools', /pet_say/.test(d.speakTools) && /clawbridge_send/.test(d.speakTools));
   check('speakIgnore defaults empty', d.speakIgnore === '');
   check('loose speak matching defaults off', d.speakMatchAnywhere === false);
@@ -1328,6 +1337,106 @@ console.log('send receipts from the session record:');
   off.world.settleAttempt();
   check('receipt checking can be turned off', off.world.state.unanswered === 1);
   await off.world.stop();
+}
+
+// ── 30. 主人状态探测 ──────────────────────────────────────────────────────
+/** 注入探测结果并等「探测 + 叫醒」跑完。 */
+const usePresence = (h, presence) => {
+  h.world.opts.detectPresence = async () => ({ ...presence, at: clock });
+};
+const settlePresence = async (h) => {
+  const pending = h.world.nudgePromise;
+  if (pending) await pending;
+};
+
+console.log('presence: locked shows in the prompt:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ awayDetection: true });
+  usePresence(h, { locked: true, idleSeconds: 0 });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  await settlePresence(h);
+  const text = String(h.pushes[0]?.spec.render());
+  check('the locked state reaches the prompt', text.includes('不在电脑前（屏幕锁着）'), text);
+  const status = JSON.parse(readFileSync(join(h.dir, 'deployment', 'data', 'rhythm', 'status.json'), 'utf8'));
+  check('status.json records the presence', status.presence?.state === 'locked', JSON.stringify(status.presence));
+  await h.world.stop();
+}
+
+console.log('presence: idle minutes show up:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ awayDetection: true, awayIdleMinutes: 10 });
+  usePresence(h, { locked: false, idleSeconds: 1200 });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  await settlePresence(h);
+  const text = String(h.pushes[0]?.spec.render());
+  check('the idle minutes reach the prompt', text.includes('20 分钟没有输入'), text);
+  await h.world.stop();
+}
+
+console.log('presence: unknown and opt-outs add nothing:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ awayDetection: true });
+  usePresence(h, { locked: null, idleSeconds: null });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  await settlePresence(h);
+  const text = String(h.pushes[0]?.spec.render());
+  check('an unknown state adds no line', !text.includes('电脑前') && !text.includes('没有输入'), text);
+  await h.world.stop();
+
+  at('2026-11-02T09:00:00+08:00');
+  const off = harness({ awayDetection: true, awayHint: false });
+  usePresence(off, { locked: true, idleSeconds: 0 });
+  await boot(off);
+  advance(15);
+  off.world.tick();
+  await settlePresence(off);
+  const offText = String(off.pushes[0]?.spec.render());
+  check('awayHint off keeps the prompt clean', !offText.includes('电脑前'), offText);
+  await off.world.stop();
+}
+
+console.log('presence: pauseWhenLocked defers the wake-up:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ awayDetection: true, pauseWhenLocked: true });
+  usePresence(h, { locked: true, idleSeconds: 0 });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  await settlePresence(h);
+  check('a locked screen skips the wake-up', h.pushes.length === 0);
+
+  usePresence(h, { locked: false, idleSeconds: 0 });
+  h.world.presenceCache = null;
+  advance(2); // 越过 60 秒的压制
+  h.world.tick();
+  await settlePresence(h);
+  check('after unlocking it wakes up on the next tick', h.pushes.length === 1, String(h.pushes.length));
+  await h.world.stop();
+}
+
+console.log('presence: disabled means no probe at all:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ awayDetection: false });
+  let probes = 0;
+  h.world.opts.detectPresence = async () => { probes += 1; return { locked: true, idleSeconds: 0, at: clock }; };
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  await settlePresence(h);
+  check('no probe when the feature is off', probes === 0);
+  check('and the prompt stays plain', !String(h.pushes[0]?.spec.render()).includes('电脑前'));
+  await h.world.stop();
 }
 
 Date.now = realNow;

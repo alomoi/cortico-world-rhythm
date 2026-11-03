@@ -93,6 +93,14 @@
   结算时去 `<dataDir>/session-main.jsonl` 尾部按 `call_id` 找工具回执；回执含失败标记（失败/过期/未连接…）
   就不计入退避。只读尾部、不落盘、不记正文；找不到回执时按原行为处理。
   渠道也可选推 `<前缀>.send-failed` 事件，作为补充信号。
+### P5：主人状态探测（已实现，未部署）
+
+- 新增 `src/presence.ts`：叫醒到点 spawn 一次 PowerShell（内联 C#：`OpenInputDesktop` + `GetLastInputInfo`），
+  2 秒超时、60 秒缓存；非 Windows 直接 `unknown`。任何失败都不影响叫醒。
+- 叫醒正文增加事实行：锁屏 → 「主人现在不在电脑前（屏幕锁着）」；空闲超过 `awayIdleMinutes` →
+  「屏幕已经 N 分钟没有输入」。不给渠道建议。
+- `pauseWhenLocked`（缺省关）：打开后锁屏期间跳过叫醒，解锁后下一拍再说。
+- `status.json` 增加 `presence` 字段（state/locked/idleSeconds）。
 ## 0.2.2
 
 - 包简介换成中文（npm 页面与扩展市场显示）。
