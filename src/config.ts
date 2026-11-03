@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 作息（Rhythm）World 的配置段与 WebUI 配置组。
  *
  * `worlds.rhythm` 是组装层给出的活引用：WebUI 在「模块」页改值时就地写进这个对象，
@@ -59,6 +59,8 @@ export interface RhythmConfigSection extends WorldSection {
   contextStaleMinutes: number;
   /** 渠道别名：`clawbridge=微信, qq=QQ`，给提示文案里的 `{by}` 用。 */
   channelAliases: string;
+  /** 叫醒后核对工具回执：据实排除发送失败的那一轮。 */
+  verifySpeakReceipts: boolean;
   /**
    * 只用桌宠与控制台的旧白名单判断「有人回来了」。
    * false（缺省）= 任何渠道的人侧事件都算：微信、QQ、B 站、Discord 等扩展都自动生效。
@@ -96,6 +98,7 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   contextQuotes: true,
   contextStaleMinutes: 120,
   channelAliases: 'clawbridge=微信, desktop-pet=桌宠, console=控制台, coopanion=应用, qq=QQ',
+  verifySpeakReceipts: true,
   knownChannelsOnly: false,
   activityIgnore: '',
   onlyWhenIdle: true,
@@ -232,6 +235,12 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           type: 'string',
           title: t.channelAliasesTitle,
           description: t.channelAliasesDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.verifySpeakReceipts`]: {
+          type: 'boolean',
+          title: t.verifyReceiptsTitle,
+          description: t.verifyReceiptsDescription,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.dryRun`]: {

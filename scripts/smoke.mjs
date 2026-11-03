@@ -1259,12 +1259,12 @@ console.log('a reply is not an outreach attempt:');
   const h = harness({ backoffAfter: 1, repeatMinutes: 10 });
   await boot(h);
   check('a replied turn does not count', (() => {
-    h.world.attempt = { at: clock, spoke: true, replied: true };
+    h.world.attempt = { at: clock, spoke: true, replied: true, calls: [] };
     h.world.settleAttempt();
     return h.world.state.unanswered === 0;
   })());
   check('an unanswered outreach still counts', (() => {
-    h.world.attempt = { at: clock, spoke: true, replied: false };
+    h.world.attempt = { at: clock, spoke: true, replied: false, calls: [] };
     h.world.settleAttempt();
     return h.world.state.unanswered === 1;
   })());
@@ -1276,13 +1276,47 @@ console.log('a channel-reported send failure is not counted:');
   at('2026-11-02T09:00:00+08:00');
   const h = harness({ backoffAfter: 1, repeatMinutes: 10 });
   await boot(h);
-  h.world.attempt = { at: clock, spoke: true, replied: false };
+  h.world.attempt = { at: clock, spoke: true, replied: false, calls: [] };
   advance(1);
   addEvent(h, 'clawbridge.send-failed');
   h.events[h.events.length - 1].meta = { tool: 'clawbridge_send' };
   h.world.settleAttempt();
   check('a failed send does not count as ignored', h.world.state.unanswered === 0, String(h.world.state.unanswered));
   await h.world.stop();
+}
+
+// ── 29. 发送回执核对：失败的那一轮不进退避 ────────────────────────────────
+console.log('send receipts from the session record:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ backoffAfter: 1, repeatMinutes: 10 });
+  await boot(h);
+  const dataDir = join(h.dir, 'deployment', 'data');
+  const record = (callId, output) => JSON.stringify({ item: { type: 'function_call_output', call_id: callId, output } });
+  writeFileSync(join(dataDir, 'session-main.jsonl'), [
+    record('call_ok', '[wx] 送达 09:25 32字'),
+    record('call_fail', '[wx] 失败:上下文已过期'),
+  ].join('\n') + '\n', 'utf8');
+
+  h.world.attempt = { at: clock, spoke: true, replied: false, calls: ['call_fail'] };
+  h.world.settleAttempt();
+  check('a failed receipt does not count', h.world.state.unanswered === 0, String(h.world.state.unanswered));
+
+  h.world.attempt = { at: clock, spoke: true, replied: false, calls: ['call_ok'] };
+  h.world.settleAttempt();
+  check('a delivered receipt still counts', h.world.state.unanswered === 1, String(h.world.state.unanswered));
+
+  h.world.attempt = { at: clock, spoke: true, replied: false, calls: ['call_missing'] };
+  h.world.settleAttempt();
+  check('a missing receipt falls back to counting', h.world.state.unanswered === 2, String(h.world.state.unanswered));
+  await h.world.stop();
+
+  const off = harness({ backoffAfter: 1, verifySpeakReceipts: false });
+  await boot(off);
+  off.world.attempt = { at: clock, spoke: true, replied: false, calls: ['call_fail'] };
+  off.world.settleAttempt();
+  check('receipt checking can be turned off', off.world.state.unanswered === 1);
+  await off.world.stop();
 }
 
 Date.now = realNow;

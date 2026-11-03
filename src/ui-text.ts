@@ -76,6 +76,8 @@ export interface RhythmUi {
   speakAnywhereDescription: string;
   channelAliasesTitle: string;
   channelAliasesDescription: string;
+  verifyReceiptsTitle: string;
+  verifyReceiptsDescription: string;
   dryRunTitle: string;
   dryRunDescription: string;
   contextAwareTitle: string;
@@ -139,6 +141,8 @@ const zh: RhythmUi = {
   speakAnywhereDescription: '打开后只要工具名里出现说话动词（send/say/reply…）就算搭话，不管前缀。能兜住 sendMsgToWechat 这种乱名，但误判率更高，默认关。',
   channelAliasesTitle: '渠道别名',
   channelAliasesDescription: '把事件前缀换成更好读的名字，例如 clawbridge=微信、qq=QQ；只影响提示文案里的渠道名。',
+  verifyReceiptsTitle: '核对发送回执',
+  verifyReceiptsDescription: '叫醒后如果它调用了发送工具，去会话记录里核对回执：回执写着失败（如微信 24 小时窗口过期），这一轮就不计入退避。默认开。',
   dryRunTitle: '影子模式（只算不发）',
   dryRunDescription: '打开后照常计算什么时候该叫、正文长什么样，但只写日志和状态文件，不投递任何事件。用来在真机上验证排程而不打扰桌宠。',
   contextAwareTitle: '叫醒时带上最近对话的事实',
@@ -218,6 +222,8 @@ const en: RhythmUi = {
   speakAnywhereDescription: 'When on, any tool name containing a speech verb (send/say/reply…) counts, whatever its prefix. Catches names like sendMsgToWechat but misreads more often. Off by default.',
   channelAliasesTitle: 'Channel aliases',
   channelAliasesDescription: 'Readable names for event prefixes, e.g. clawbridge=WeChat, qq=QQ. Only affects the wording of prompts.',
+  verifyReceiptsTitle: 'Verify send receipts',
+  verifyReceiptsDescription: 'After a wake-up, checks the tool receipt in the session record. A failed send (e.g. the WeChat 24h window expired) does not count towards backoff. On by default.',
   dryRunTitle: 'Shadow mode (plan only)',
   dryRunDescription: 'Computes when it would wake and what it would say, but only writes logs and the status file - nothing is delivered. Use it to verify the schedule on the real machine without disturbing the pet.',
   contextAwareTitle: 'Tell the bot the recent facts',

@@ -89,8 +89,10 @@
 - 新增 `channelAliases`：`clawbridge=微信`、`desktop-pet=桌宠`、`console=控制台`、`qq=QQ`；
   提示文案里的 `{by}` 用可读名字，不再出现 `clawbridge.message` 这种技术名。
 - 退避不计「回话」：叫醒那一轮如果期间有人说过话，视为回复而不是主动搭话。
-- 退避不计「发送失败」：渠道若推 `<前缀>.send-failed`（`meta.tool` 记工具名），这一轮不算没人理。
-  clawbridge 尚未实现该事件（需要一次小改动）。
+- 退避不计「发送失败」：新增 `verifySpeakReceipts`（缺省开）。叫醒后记下说话工具的 `call_id`，
+  结算时去 `<dataDir>/session-main.jsonl` 尾部按 `call_id` 找工具回执；回执含失败标记（失败/过期/未连接…）
+  就不计入退避。只读尾部、不落盘、不记正文；找不到回执时按原行为处理。
+  渠道也可选推 `<前缀>.send-failed` 事件，作为补充信号。
 ## 0.2.2
 
 - 包简介换成中文（npm 页面与扩展市场显示）。

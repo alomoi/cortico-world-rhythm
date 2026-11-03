@@ -31,6 +31,7 @@
  * 每个间隔（第一次叫醒与每次再次叫醒）各自乘以一次随机倍数（jitter），让节奏不机械。
  * 叫醒事件在投递时才渲染（pushDeferred）：如果排队期间使用者回来了，这一条作废。
  */
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EventEnvelope, OutputTap, RunPhase, World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
 import type { Language } from 'cortico/core/language.ts';
@@ -63,6 +64,9 @@ const SELF_SUFFIX = '.self';
 
 /** 「被吵醒」提示的保鲜期由配置给（`wakeHintSeconds`，缺省 90 秒），超过就作废。 */
 const DEFAULT_WAKE_HINT_SECONDS = 90;
+
+/** 回执里出现这些字样就当成「没发出去」。 */
+const FAILURE_MARKERS: readonly string[] = ['失败', '过期', '未连接', '没发出去', '发送失败', 'failed', 'expired'];
 
 /** 算「主动搭话」的工具名；配置是逗号分隔的字符串。 */
 const DEFAULT_SPEAK_TOOLS = 'pet_say, pet_ask, console_send, clawbridge_send';
@@ -117,6 +121,7 @@ interface Limits {
   wakeHint: boolean;
   wakeGapMinutes: number;
   wakeHintSeconds: number;
+  verifySpeakReceipts: boolean;
   dryRun: boolean;
   contextAware: boolean;
   contextQuotes: boolean;
@@ -154,7 +159,7 @@ export class RhythmWorld implements World {
    * 最近一次叫醒之后的那一轮：它有没有对外开口。
    * 只有「开了口又没人回」才计入退避；安静地结束、或去查资料都不算。
    */
-  private attempt: { at: number; spoke: boolean; replied: boolean } | null = null;
+  private attempt: { at: number; spoke: boolean; replied: boolean; calls: string[] } | null = null;
   /** 从流里抓到的「它最近说了什么」（覆盖微信这类不落 self 事件的渠道）。 */
   private lastSaid: { at: number; text: string } | null = null;
   /** 流里的 function_call 名字，等参数到齐后据此识别说话工具。 */
@@ -332,6 +337,7 @@ export class RhythmWorld implements World {
       this.host?.log.debug('作息:叫醒后的工具调用', { tool: item.name, countsAsSpeech: speech });
       if (!speech || this.attempt.spoke) return;
       this.attempt.spoke = true;
+      if (id) { if (this.attempt.calls.length > 16) this.attempt.calls.shift(); this.attempt.calls.push(id); }
       // 这一轮之前/期间有人说过话 → 它是在回话，不是主动搭话，退避不计
       this.attempt.replied = this.latestPersonActivity().at > this.attempt.at;
       this.host?.log.debug('作息:叫醒后开口了', { tool: item.name, replied: this.attempt.replied });
@@ -422,6 +428,50 @@ export class RhythmWorld implements World {
   }
 
   /**
+   * 去会话记录里核对发送回执。
+   * 主 session 的上下文写在 `<dataDir>/session-main.jsonl`，工具回执是 `function_call_output` 记录，
+   * 按 call_id 能对回我们自己看到的那次调用。只读文件尾部，不整读、不落盘、不记正文。
+   * 判定：回执里出现失败标记才算失败；没有回执或没有标记 → 按原来的行为处理（可能是成功）。
+   */
+  private receiptFailureFor(calls: readonly string[]): string | null {
+    const wanted = new Set(calls);
+    let fd: number;
+    try {
+      fd = openSync(join(this.opts.dataDir, 'session-main.jsonl'), 'r');
+    } catch {
+      return null;
+    }
+    try {
+      const size = fstatSync(fd).size;
+      const length = Math.min(size, 512 * 1024);
+      if (length <= 0) return null;
+      const buffer = Buffer.alloc(length);
+      readSync(fd, buffer, 0, length, size - length);
+      const lines = buffer.toString('utf8').split('\n');
+      // 从中间开始读时，第一行可能是半条记录
+      if (size > length) lines.shift();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let record: { item?: { type?: string; call_id?: string; output?: unknown } };
+        try {
+          record = JSON.parse(line) as typeof record;
+        } catch {
+          continue;
+        }
+        const item = record.item;
+        if (!item || item.type !== 'function_call_output' || !item.call_id || !wanted.has(item.call_id)) continue;
+        const text = typeof item.output === 'string' ? item.output : JSON.stringify(item.output ?? '');
+        if (FAILURE_MARKERS.some((marker) => text.includes(marker))) return text.slice(0, 60);
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      try { closeSync(fd); } catch { /* 关不上就算了 */ }
+    }
+  }
+
+  /**
    * 渠道有没有报过「这条没发出去」。
    * 约定：任何 World 都可以推一条 `<渠道>.send-failed` 事件（deliver:false 即可），
    * 我们的退避就不把这一轮算作「没人理」。目前还没有插件发它——见 docs 里的约定。
@@ -467,7 +517,15 @@ export class RhythmWorld implements World {
       this.host?.log.debug('作息:这一轮是在回话，不计入退避', { round: this.rounds });
       return;
     }
-    // 渠道自己报了发送失败（例如微信 24 小时窗口过期）：不算「没人理」
+    // 回执写着失败（微信 24 小时窗口过期、网络错误等）：不算「没人理」
+    if (this.limits().verifySpeakReceipts && attempt.calls.length) {
+      const receiptFailure = this.receiptFailureFor(attempt.calls);
+      if (receiptFailure) {
+        this.host?.log.info('作息:发送回执是失败，不计入退避', { receipt: receiptFailure });
+        return;
+      }
+    }
+    // 兼容约定：渠道也可以主动推 <前缀>.send-failed 事件
     const failed = this.sendFailedSince(attempt.at);
     if (failed) {
       this.host?.log.info('作息:搭话发送失败，不计入退避', { tool: failed });
@@ -520,6 +578,7 @@ export class RhythmWorld implements World {
       wakeHint: cfg.wakeHint !== false,
       wakeGapMinutes: Math.floor(numberIn(cfg.wakeGapMinutes, 30, 1, 240)),
       wakeHintSeconds: Math.floor(numberIn(cfg.wakeHintSeconds, DEFAULT_WAKE_HINT_SECONDS, 10, 300)),
+      verifySpeakReceipts: cfg.verifySpeakReceipts !== false,
       dryRun: cfg.dryRun === true,
       contextAware: cfg.contextAware !== false,
       contextQuotes: cfg.contextQuotes !== false,
@@ -925,7 +984,7 @@ export class RhythmWorld implements World {
     // 先拼正文（此刻的轮次是「这一次」），再自增
     const text = this.composeNudge(now, latest, this.rounds + 1);
     this.rounds += 1;
-    this.attempt = { at: now, spoke: false, replied: false };
+    this.attempt = { at: now, spoke: false, replied: false, calls: [] };
     this.lastNudgeAt = now;
     this.state.nudgesToday += 1;
     this.suppressedUntil = 0;
