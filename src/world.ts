@@ -569,6 +569,7 @@ export class RhythmWorld implements World {
     // 回执写着失败（微信 24 小时窗口过期、网络错误等）：不算「没人理」
     if (this.limits().verifySpeakReceipts && attempt.calls.length) {
       const receipts = this.receiptStatusFor(attempt.calls);
+      this.host?.log.debug('作息:发送回执', { delivered: receipts.delivered, failed: receipts.failed });
       if (!receipts.delivered && receipts.failed) {
         this.host?.log.info('作息:发送回执全是失败，不计入退避', { receipt: receipts.failed });
         return;

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 模型读到的文本（叫醒事件正文），中文与英文两版。
  *
  * 语言跟 Coopanion 的模型文本语言走：应用语言是 zh / zh-Hant 用中文，其余用英文。
@@ -65,12 +65,12 @@ const MAX_BODY_CHARS = 320;
 const CLOSINGS: Record<ModelLanguage, readonly string[]> = {
   zh: [
     '想说话就用你平时的方式说一句，想做事就用工具，不想就结束这一轮。',
-    '还是没人来。想说就说一句，不想就继续安静。',
+    '想说就说一句，不想就继续安静。',
     '一直没人来。想做点自己的事也行，想结束就结束这一轮。',
   ],
   en: [
     'If you want to say something, say it the way you usually do; use your tools if you have something to do; otherwise end this turn.',
-    'Still nobody. Say something if you feel like it, or stay quiet.',
+    'Say something if you feel like it, or stay quiet.',
     'Nobody has come for a while. You can also just do your own thing, or end this turn.',
   ],
 };
@@ -100,6 +100,7 @@ const closingFor = (language: ModelLanguage, round: number): string => {
  */
 export function nudgeText(language: ModelLanguage, line: NudgeLine): string {
   const optional: string[] = [];
+  const quotes: string[] = [];
   // 主人不在电脑前是事实，优先保留（超长时先丢引用，最后才丢它）
   if (line.away) {
     const idle = line.away.idleMinutes ?? 0;
@@ -114,17 +115,17 @@ export function nudgeText(language: ModelLanguage, line: NudgeLine): string {
     }
   }
   if (line.quoteUser) {
-    optional.push(language === 'zh'
+    quotes.push(language === 'zh'
       ? `对方最后一句（${line.quoteUser.at}）：「${line.quoteUser.text}」`
       : `The last thing they said (${line.quoteUser.at}): "${line.quoteUser.text}"`);
   }
   if (line.quoteSelf) {
-    optional.push(language === 'zh'
+    quotes.push(language === 'zh'
       ? `你上次说（${line.quoteSelf.at}）：「${line.quoteSelf.text}」${line.quoteSelf.answered ? '。' : '，还没人接话。'}`
       : `You last said (${line.quoteSelf.at}): "${line.quoteSelf.text}"${line.quoteSelf.answered ? '.' : ', and nobody has replied.'}`);
   }
-  // 没有引用时，才用「对方没接」这句事实（避免和引用行重复）
-  if (line.unanswered && !optional.length) optional.push(UNANSWERED_FACT[language]);
+  // 没有引用时，才用「对方没接」这句事实（避免和引用行重复）；away 不影响它
+  if (line.unanswered && quotes.length === 0) optional.push(UNANSWERED_FACT[language]);
 
   const closing = closingFor(language, line.round);
   const build = (extra: readonly string[]): string => [OPENINGS[language](line), ...extra, closing].join('\n');

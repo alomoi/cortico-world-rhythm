@@ -1570,6 +1570,25 @@ console.log('dream: an older messages.json gets the new keys:');
   await h.world.stop();
 }
 
+console.log('a fact line survives the away line:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ awayDetection: true, backoffAfter: 1 });
+  usePresence(h, { locked: true, idleSeconds: 0 });
+  await boot(h);
+  advance(1);
+  // 先让它说一句，制造一个「没被接」的事实
+  h.world.attempt = { at: clock, spoke: true, replied: false, calls: [] };
+  h.world.settleAttempt();
+  advance(14);
+  h.world.tick();
+  await settlePresence(h);
+  const text = String(h.pushes[0]?.spec.render());
+  check('the away line is there', text.includes('不在电脑前'), text);
+  check('and the unanswered fact is not swallowed', text.includes('你前面说过一句，对方还没接'), text);
+  await h.world.stop();
+}
+
 Date.now = realNow;
 console.log(failures.length === 0 ? 'PASS' : `FAILED (${failures.length})`);
 process.exitCode = failures.length === 0 ? 0 : 1;
