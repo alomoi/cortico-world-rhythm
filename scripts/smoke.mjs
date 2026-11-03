@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * 行为冒烟测试：不需要 Coopanion，用假宿主与假时钟驱动 World 的计时逻辑。
  *
@@ -1233,6 +1233,7 @@ console.log('closing lines rotate:');
   h.world.tick();
   const texts = h.pushes.map((p) => String(p.spec.render()));
   check('three wake-ups use three different closings', new Set(texts.map((x) => x.split('\n').at(-1))).size === 3, texts.join(' || '));
+  check('every closing keeps the tools option', texts.every((x) => x.split('\n').at(-1).includes('工具')), texts.join(' || '));
   check('none of them mentions a specific channel', texts.every((x) => !x.includes('气泡')), texts.join(' || '));
   await h.world.stop();
 }
