@@ -66,12 +66,12 @@ const CLOSINGS: Record<ModelLanguage, readonly string[]> = {
   zh: [
     '想说话就用你平时的方式说一句，想做事就用工具，不想就结束这一轮。',
     '想说就说一句，想做事也可以用工具，不想就继续安静。',
-    '一直没人来。想做点自己的事也行，想说话也可以，不想就结束这一轮。',
+    '一直没人来。想做点自己的事就用工具，想说话也可以，不想就结束这一轮。',
   ],
   en: [
     'If you want to say something, say it the way you usually do; use your tools if you have something to do; otherwise end this turn.',
     'Still nobody. Say something if you feel like it, use your tools if you have things to do, or stay quiet.',
-    'Nobody has come for a while. You can do your own thing, say something, or end this turn.',
+    'Nobody has come for a while. Use your tools if you have things to do, say something, or end this turn.',
   ],
 };
 
