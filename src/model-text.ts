@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 模型读到的文本（叫醒事件正文），中文与英文两版。
  *
  * 语言跟 Coopanion 的模型文本语言走：应用语言是 zh / zh-Hant 用中文，其余用英文。
@@ -128,6 +128,7 @@ export function nudgeText(language: ModelLanguage, line: NudgeLine): string {
   if (line.unanswered && quotes.length === 0) optional.push(UNANSWERED_FACT[language]);
 
   const closing = closingFor(language, line.round);
+  optional.push(...quotes);
   const build = (extra: readonly string[]): string => [OPENINGS[language](line), ...extra, closing].join('\n');
 
   let body = build(optional);
