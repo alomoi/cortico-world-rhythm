@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 模型读到的文本（叫醒事件正文），中文与英文两版。
  *
  * 语言跟 Coopanion 的模型文本语言走：应用语言是 zh / zh-Hant 用中文，其余用英文。
@@ -65,13 +65,13 @@ const MAX_BODY_CHARS = 320;
 const CLOSINGS: Record<ModelLanguage, readonly string[]> = {
   zh: [
     '想说话就用你平时的方式说一句，想做事就用工具，不想就结束这一轮。',
-    '想说就说一句，不想就继续安静。',
-    '一直没人来。想做点自己的事也行，想结束就结束这一轮。',
+    '还是没人来。想说就说一句，想做事也可以用工具，不想就继续安静。',
+    '一直没人来。想做点自己的事也行，想说话也可以，不想就结束这一轮。',
   ],
   en: [
     'If you want to say something, say it the way you usually do; use your tools if you have something to do; otherwise end this turn.',
-    'Say something if you feel like it, or stay quiet.',
-    'Nobody has come for a while. You can also just do your own thing, or end this turn.',
+    'Still nobody. Say something if you feel like it, use your tools if you have things to do, or stay quiet.',
+    'Nobody has come for a while. You can do your own thing, say something, or end this turn.',
   ],
 };
 
