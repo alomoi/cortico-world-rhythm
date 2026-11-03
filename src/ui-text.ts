@@ -88,6 +88,16 @@ export interface RhythmUi {
   awayHintDescription: string;
   awayIdleProbeTitle: string;
   awayIdleProbeDescription: string;
+  dreamEnabledTitle: string;
+  dreamEnabledDescription: string;
+  dreamChanceTitle: string;
+  dreamChanceDescription: string;
+  dreamAfterTitle: string;
+  dreamAfterDescription: string;
+  dreamMaxTitle: string;
+  dreamMaxDescription: string;
+  dreamDiaryTitle: string;
+  dreamDiaryDescription: string;
   dryRunTitle: string;
   dryRunDescription: string;
   contextAwareTitle: string;
@@ -163,6 +173,16 @@ const zh: RhythmUi = {
   pauseLockedDescription: '打开后，屏幕锁着时跳过这次叫醒，等解锁后的下一拍再说。默认关——锁屏时它可能更想用微信找你。',
   awayHintTitle: '把探测结果写进正文',
   awayHintDescription: '关掉后只写日志、不改正文。',
+  dreamEnabledTitle: '夜里做梦',
+  dreamEnabledDescription: '睡眠时段里随机做一次梦；做梦那一轮会明令不许说话、不许联系任何人。默认关。',
+  dreamChanceTitle: '每夜做梦的概率',
+  dreamChanceDescription: '入夜时掷骰子决定这一夜做不做梦（0–1，缺省 0.3）。',
+  dreamAfterTitle: '入睡多久后才可能做梦',
+  dreamAfterDescription: '至少睡这么多分钟、且没被打扰，才安排梦。缺省 60 分钟。',
+  dreamMaxTitle: '一夜最多几次梦',
+  dreamMaxDescription: '缺省 1 次。',
+  dreamDiaryTitle: '梦的小本本',
+  dreamDiaryDescription: '把每场梦追加到这个 Markdown（相对部署目录，默认 workspace/partner/dreams.md）；留空不写。',
   awayIdleProbeTitle: '额外探测键鼠空闲（会编译代码）',
   awayIdleProbeDescription: '⚠ 默认只查锁屏（纯 cmdlet，不编译）。打开后会调用 Add-Type 现场编译 C# 读取键鼠空闲秒数：更准确，但属于运行时编译，可能被杀毒/EDR 拦截或告警，首次约 1 秒。如果你的安全软件拦截，请保持关闭——锁屏检测仍然有效。',
   contextAwareTitle: '叫醒时带上最近对话的事实',
@@ -254,6 +274,16 @@ const en: RhythmUi = {
   pauseLockedDescription: 'Skips the wake-up while locked and waits for the next tick after unlocking. Off by default: it may prefer WeChat when you are away.',
   awayHintTitle: 'Put the probe result in the prompt',
   awayHintDescription: 'When off, the result only goes to the log.',
+  dreamEnabledTitle: 'Dreaming at night',
+  dreamEnabledDescription: 'A random dream during the sleep window. The dream turn explicitly forbids speaking or contacting anyone. Off by default.',
+  dreamChanceTitle: 'Chance of a dream per night',
+  dreamChanceDescription: 'Rolled once at bedtime (0-1, default 0.3).',
+  dreamAfterTitle: 'Minutes of sleep before a dream',
+  dreamAfterDescription: 'Only after this much uninterrupted sleep. 60 by default.',
+  dreamMaxTitle: 'Dreams per night at most',
+  dreamMaxDescription: '1 by default.',
+  dreamDiaryTitle: 'Dream diary',
+  dreamDiaryDescription: 'Appends every dream to this markdown file (relative to the deployment folder, default workspace/partner/dreams.md). Empty disables it.',
   awayIdleProbeTitle: 'Also probe keyboard/mouse idle time (compiles code)',
   awayIdleProbeDescription: 'Warning: by default only the lock state is checked with plain cmdlets. Turning this on uses Add-Type to compile C# at runtime and read keyboard/mouse idle seconds. More precise, but runtime compilation may be blocked or flagged by antivirus/EDR, and the first call takes about a second. Keep it off if your security software complains; lock detection still works.',
   contextAwareTitle: 'Tell the bot the recent facts',

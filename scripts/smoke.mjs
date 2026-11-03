@@ -167,6 +167,9 @@ console.log('config defaults:');
   check('pauseWhenLocked defaults off', d.pauseWhenLocked === false);
   check('awayHint defaults on', d.awayHint === true);
   check('idle probing defaults off (no runtime compile)', d.awayIdleProbe === false);
+  check('dreaming defaults off', d.dreamEnabled === false);
+  check('dream chance defaults to 0.3', d.dreamChance === 0.3);
+  check('dream diary defaults into the workspace', d.dreamDiary === 'workspace/partner/dreams.md');
   check('speakTools defaults to the four known send tools', /pet_say/.test(d.speakTools) && /clawbridge_send/.test(d.speakTools));
   check('speakIgnore defaults empty', d.speakIgnore === '');
   check('loose speak matching defaults off', d.speakMatchAnywhere === false);
@@ -1476,6 +1479,95 @@ console.log('presence: probe mode follows the setting:');
   await settlePresence(h2);
   check('full probe when the setting is on', seen2?.full === true, JSON.stringify(seen2));
   await h2.world.stop();
+}
+
+// ── 32. 做梦 ──────────────────────────────────────────────────────────────
+console.log('dream: one nightly plan, captured and written to the diary:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({
+    sleepWindow: '22:00-08:00',
+    dreamEnabled: true,
+    dreamChance: 1,
+    dreamAfterMinutes: 60,
+    dreamMaxPerNight: 1,
+  });
+  // 三颗骰子：做不做 / 几点 / 类型
+  const seq = [0.5, 0.5, 0];
+  let n = 0;
+  h.world.opts.random = () => seq[Math.min(n++, seq.length - 1)];
+  await boot(h);
+  advance(10); // 22:00 入夜
+  h.world.tick();
+  const plan = h.world.state.sleep.dreamPlan;
+  check('a dream plan is rolled at bedtime', plan !== null, JSON.stringify(plan));
+  check('the plan lands inside the window', plan !== null && new Date(plan.at).getHours() === 3, plan ? new Date(plan.at).toISOString() : '');
+
+  advance(300); // 03:00
+  h.world.tick();
+  const dreamHint = h.hints.find((x) => x.spec.meta.kind === 'dream');
+  check('the dream hint is sent', Boolean(dreamHint));
+  check('it carries a dream type', String(dreamHint?.spec.render()).includes('【天马行空的】'), String(dreamHint?.spec.render()));
+  check('the plan is consumed', h.world.state.sleep.dreamPlan === null);
+
+  const tap = h.world.outputTap();
+  tap.onEvent({ type: 'response.output_text.delta', delta: '梦见在海边捡到' });
+  tap.onEvent({ type: 'response.output_text.delta', delta: '一颗会发光的贝壳。' });
+  h.world.onTurnEnded();
+  check('the dream text is captured', h.world.state.sleep.dreams[0]?.text.includes('会发光的贝壳'), JSON.stringify(h.world.state.sleep.dreams));
+
+  const diary = join(h.dir, 'deployment', 'workspace', 'partner', 'dreams.md');
+  check('the diary file exists', existsSync(diary));
+  const md = existsSync(diary) ? readFileSync(diary, 'utf8') : '';
+  check('the diary holds the dream', md.includes('会发光的贝壳') && md.includes('天马行空的'), md);
+
+  at('2026-11-03T08:00:00+08:00');
+  h.world.tick();
+  const wake = h.hints.filter((x) => x.spec.meta.kind === 'wake').at(-1);
+  const wakeText = String(wake?.spec.render());
+  check('the morning hint mentions the dream', wakeText.includes('你昨晚做了一个【天马行空的】的梦'), wakeText);
+  check('but sharing stays the bot decision', wakeText.includes('要不要跟主人提，由你决定'), wakeText);
+  await h.world.stop();
+}
+
+console.log('dream: off, no plan; disturbed, cancelled:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const off = harness({ sleepWindow: '22:00-08:00', dreamEnabled: false });
+  await boot(off);
+  advance(10);
+  off.world.tick();
+  check('no plan when dreaming is off', off.world.state.sleep.dreamPlan === null);
+  await off.world.stop();
+
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00', dreamEnabled: true, dreamChance: 1, dreamAfterMinutes: 60 });
+  let m = 0;
+  const seq = [0.1, 0.5, 0];
+  h.world.opts.random = () => seq[Math.min(m++, seq.length - 1)];
+  await boot(h);
+  advance(10);
+  h.world.tick();
+  check('a plan exists before the interruption', h.world.state.sleep.dreamPlan !== null);
+  advance(1);
+  addEvent(h, 'clawbridge.message');
+  h.world.tick();
+  check('being woken cancels the dream', h.world.state.sleep.dreamPlan === null);
+  await h.world.stop();
+}
+
+console.log('dream: an older messages.json gets the new keys:');
+{
+  const h = harness();
+  const file = messagesPath(join(h.dir, 'deployment', 'data'));
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ version: 1, zh: { sleep: 'OLD SLEEP' }, en: {} }), 'utf8');
+  await boot(h);
+  const migrated = JSON.parse(readFileSync(file, 'utf8'));
+  check('the old value is kept', migrated.zh.sleep === 'OLD SLEEP', JSON.stringify(migrated.zh));
+  check('the dream template is added', typeof migrated.zh.dream === 'string' && migrated.zh.dream.includes('梦'), JSON.stringify(migrated.zh));
+  check('the dream types are added', Array.isArray(migrated.zh.dreamTypes) && migrated.zh.dreamTypes.length > 0);
+  await h.world.stop();
 }
 
 Date.now = realNow;

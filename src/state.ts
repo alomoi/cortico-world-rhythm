@@ -48,6 +48,10 @@ export interface SleepSession {
   lastWokeBy: string | null;
   /** 上一次「计数过」的打扰时刻；用来合并同一场聊天。 */
   lastCountedAt: string | null;
+  /** 这一夜做梦的计划（入夜时一次掷完）；null = 这一夜不做梦。 */
+  dreamPlan: { at: number; type: string } | null;
+  /** 这一夜已经做过的梦（含捕获到的正文）。 */
+  dreams: Array<{ at: number; type: string; text: string }>;
 }
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -81,6 +85,8 @@ function emptySleep(): SleepSession {
     lastWokeAt: null,
     lastWokeBy: null,
     lastCountedAt: null,
+    dreamPlan: null,
+    dreams: [],
   };
 }
 
@@ -106,6 +112,28 @@ const isoOf = (value: unknown): string | null =>
 
 const boolOf = (value: unknown): boolean => value === true;
 
+function dreamPlanOf(value: unknown): { at: number; type: string } | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const bag = value as Record<string, unknown>;
+  const at = typeof bag.at === 'number' && Number.isFinite(bag.at) ? bag.at : 0;
+  const type = typeof bag.type === 'string' ? bag.type : '';
+  return at > 0 && type ? { at, type } : null;
+}
+
+function dreamsOf(value: unknown): Array<{ at: number; type: string; text: string }> {
+  if (!Array.isArray(value)) return [];
+  const out: Array<{ at: number; type: string; text: string }> = [];
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue;
+    const bag = item as Record<string, unknown>;
+    const at = typeof bag.at === 'number' && Number.isFinite(bag.at) ? bag.at : 0;
+    const type = typeof bag.type === 'string' ? bag.type : '';
+    const text = typeof bag.text === 'string' ? bag.text : '';
+    if (at > 0) out.push({ at, type, text });
+  }
+  return out;
+}
+
 function sleepOf(value: unknown): SleepSession {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return emptySleep();
   const bag = value as Record<string, unknown>;
@@ -117,6 +145,8 @@ function sleepOf(value: unknown): SleepSession {
     lastWokeAt: isoOf(bag.lastWokeAt),
     lastWokeBy: typeof bag.lastWokeBy === 'string' ? bag.lastWokeBy : null,
     lastCountedAt: isoOf(bag.lastCountedAt),
+    dreamPlan: dreamPlanOf(bag.dreamPlan),
+    dreams: dreamsOf(bag.dreams),
   };
 }
 

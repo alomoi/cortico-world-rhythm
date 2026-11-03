@@ -31,8 +31,8 @@
  * 每个间隔（第一次叫醒与每次再次叫醒）各自乘以一次随机倍数（jitter），让节奏不机械。
  * 叫醒事件在投递时才渲染（pushDeferred）：如果排队期间使用者回来了，这一条作废。
  */
-import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { EventEnvelope, OutputTap, RunPhase, World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
 import type { Language } from 'cortico/core/language.ts';
 import { shortTime } from 'cortico/core/util.ts';
@@ -104,6 +104,10 @@ export interface RhythmOptions {
   timezone: string;
   /** 部署数据目录；状态、公开状态与提示文案都放它的 `rhythm/` 下。 */
   dataDir: string;
+  /** 部署目录；梦的小本本等给 Coo 看的文件相对它解析。 */
+  botDir: string;
+  /** 随机源；测试可注入，缺省 Math.random。 */
+  random?: () => number;
   /** 模型文本语言；每条事件渲染时现取。 */
   language: () => ModelLanguage;
   /** 主人状态探测；测试可注入，缺省用本机 Windows 探测。 */
@@ -134,6 +138,11 @@ interface Limits {
   pauseWhenLocked: boolean;
   awayHint: boolean;
   awayIdleProbe: boolean;
+  dreamEnabled: boolean;
+  dreamChance: number;
+  dreamAfterMinutes: number;
+  dreamMaxPerNight: number;
+  dreamDiary: string;
   knownChannelsOnly: boolean;
   onlyWhenIdle: boolean;
 }
@@ -182,6 +191,8 @@ export class RhythmWorld implements World {
   private nudgePending = false;
   /** 当前这次「探测 + 叫醒」的 Promise（测试等待用）。 */
   private nudgePromise: Promise<void> | null = null;
+  /** 正在做梦的那一轮：抓它的正文，回合结束时写进小本本。 */
+  private dreamTurn: { at: number; deltas: string[] } | null = null;
   /** 文案文件的损坏只报一次，别每次提示都刷屏。 */
   private messagesWarned = false;
   /**
@@ -286,6 +297,8 @@ export class RhythmWorld implements World {
           lastWokeAt: null,
           lastWokeBy: null,
           lastCountedAt: null,
+          dreamPlan: null,
+          dreams: [],
         };
         this.persist();
       }
@@ -338,7 +351,16 @@ export class RhythmWorld implements World {
       item?: { type?: string; name?: string; id?: string; call_id?: string } | null;
       item_id?: string;
       arguments?: string;
+      delta?: string;
     };
+
+    // 做梦那一轮：把模型写出来的正文攒起来，回合结束时写进小本本
+    if (this.dreamTurn && e.type === 'response.output_text.delta') {
+      if (typeof e.delta === 'string' && e.delta) {
+        if (this.dreamTurn.deltas.length < 600) this.dreamTurn.deltas.push(e.delta);
+      }
+      return;
+    }
 
     if (e.type === 'response.output_item.added') {
       const item = e.item;
@@ -615,6 +637,11 @@ export class RhythmWorld implements World {
       pauseWhenLocked: cfg.pauseWhenLocked === true,
       awayHint: cfg.awayHint !== false,
       awayIdleProbe: cfg.awayIdleProbe === true,
+      dreamEnabled: cfg.dreamEnabled === true,
+      dreamChance: numberIn(cfg.dreamChance, 0.3, 0, 1),
+      dreamAfterMinutes: Math.floor(numberIn(cfg.dreamAfterMinutes, 60, 10, 720)),
+      dreamMaxPerNight: Math.floor(numberIn(cfg.dreamMaxPerNight, 1, 1, 3)),
+      dreamDiary: typeof cfg.dreamDiary === 'string' ? cfg.dreamDiary.trim() : 'workspace/partner/dreams.md',
       knownChannelsOnly: cfg.knownChannelsOnly === true,
       onlyWhenIdle: cfg.onlyWhenIdle !== false,
     };
@@ -772,7 +799,10 @@ export class RhythmWorld implements World {
     const windowNow = this.currentWindow(now);
     if (windowNow) {
       if (this.lastWindow !== windowNow.kind) this.enterWindow(windowNow, now);
-      if (windowNow.kind === 'sleep') this.countWakes(now, limits);
+      if (windowNow.kind === 'sleep') {
+        this.countWakes(now, limits);
+        this.maybeDream(now, limits);
+      }
       return;
     }
     if (this.lastWindow) this.leaveWindow(now, limits);
@@ -847,11 +877,14 @@ export class RhythmWorld implements World {
         lastWokeAt: null,
         lastWokeBy: null,
         lastCountedAt: null,
+        dreamPlan: null,
+        dreams: [],
       };
       if (limits.sleepHint) {
         this.sendHint('sleep', now);
         this.state.sleep.sleepHintSent = true;
       }
+      this.planDream(windowNow.window, now, limits);
       this.persist();
     }
     host?.log.info('作息:进入睡眠时段', {
@@ -870,7 +903,24 @@ export class RhythmWorld implements World {
       host?.log.info('作息:休息时段结束，安静计时重新开始', { quietMinutes: limits.quietMinutes });
     } else {
       if (limits.sleepHint && this.state.sleep.sleepHintSent && !this.state.sleep.wakeHintSent) {
-        this.sendHint('wake', now);
+        const extra: string[] = [];
+        const dreams = this.state.sleep.dreams;
+        const language = this.opts.language();
+        for (const dream of dreams.slice(-3)) {
+          if (dream.text) {
+            extra.push(language === 'zh'
+              ? `你昨晚做了一个【${dream.type}】的梦，梦到：「${dream.text}」`
+              : `You dreamed a ${dream.type} dream last night: "${dream.text}"`);
+          } else {
+            extra.push(language === 'zh'
+              ? `你昨晚做了一个【${dream.type}】的梦，细节你自己记得`
+              : `You dreamed a ${dream.type} dream last night; the details are yours to remember`);
+          }
+        }
+        if (extra.length) {
+          extra.push(language === 'zh' ? '要不要跟主人提，由你决定。' : 'Whether to tell the person is up to you.');
+        }
+        this.sendHint('wake', now, {}, extra);
         this.state.sleep.wakeHintSent = true;
       }
       host?.log.info('作息:睡眠时段结束', {
@@ -885,6 +935,8 @@ export class RhythmWorld implements World {
         lastWokeAt: null,
         lastWokeBy: null,
         lastCountedAt: null,
+        dreamPlan: null,
+        dreams: [],
       };
       this.persist();
     }
@@ -899,6 +951,87 @@ export class RhythmWorld implements World {
   }
 
   /**
+   * 入夜时掷三颗骰子：做不做、几点做、做什么类型，一次定完并存进状态。
+   * 不采用「每隔几分钟掷一次」——那会让累计概率迅速逼近 1。
+   */
+  private planDream(window: ClockWindow, now: number, limits: Limits): void {
+    if (!limits.dreamEnabled) return;
+    const duration = ((window.end - window.start) + 1440) % 1440;
+    if (duration <= limits.dreamAfterMinutes + 60) return;
+    const random = this.opts.random ?? Math.random;
+    if (random() >= limits.dreamChance) return;
+    const nowMinute = minutesOfDay(now, this.opts.timezone);
+    const earliest = window.start + limits.dreamAfterMinutes;
+    const latest = window.start + duration - 60;
+    const span = Math.max(1, latest - earliest);
+    const targetMinute = earliest + Math.floor(random() * span);
+    const delta = ((targetMinute - nowMinute) + 1440) % 1440;
+    const types = this.readMessages()[this.opts.language()].dreamTypes;
+    const type = types[Math.min(types.length - 1, Math.floor(random() * types.length))] ?? '梦';
+    this.state.sleep.dreamPlan = { at: now + delta * 60_000, type };
+    this.host?.log.info('作息:安排了一场梦', { at: new Date(this.state.sleep.dreamPlan.at).toISOString(), type });
+  }
+
+  /** 到点做梦：只投一条提示，不计数、不进退避；正文在回合结束时抓。 */
+  private maybeDream(now: number, limits: Limits): void {
+    const plan = this.state.sleep.dreamPlan;
+    if (!plan || now < plan.at) return;
+    if (this.state.sleep.dreams.length >= limits.dreamMaxPerNight) {
+      this.state.sleep.dreamPlan = null;
+      this.persist();
+      return;
+    }
+    if (limits.onlyWhenIdle && this.phaseState !== 'idle') return;
+    this.state.sleep.dreamPlan = null;
+    this.state.sleep.dreams.push({ at: now, type: plan.type, text: '' });
+    this.dreamTurn = { at: now, deltas: [] };
+    this.sendHint('dream', now, { type: plan.type });
+    this.host?.log.info('作息:做梦', { type: plan.type, phase: this.phaseState });
+    this.persist();
+  }
+
+  /** 梦的时间戳：`2026-11-03 周二 03:12`。 */
+  private dreamStamp(at: number): string {
+    const timezone = this.opts.timezone || undefined;
+    const day = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(at));
+    const weekday = new Intl.DateTimeFormat('zh-CN', { timeZone: timezone, weekday: 'short' }).format(new Date(at));
+    return `${day} ${weekday} ${shortTime(this.opts.timezone, new Date(at))}`;
+  }
+
+  /** 把一场梦追加进小本本；只在配置了路径时写，失败只记日志。 */
+  private appendDreamDiary(dream: { at: number; type: string; text: string }): void {
+    const diary = this.limits().dreamDiary;
+    if (!diary) return;
+    const file = join(this.opts.botDir, diary);
+    const body = dream.text || '（没记下细节，只记得做过这个梦）';
+    const header = existsSync(file) ? '' : '# 梦的小本本\n\n';
+    const night = this.state.sleep;
+    const entry = `${header}## ${this.dreamStamp(dream.at)} · ${dream.type}\n> ${body}\n\n（第 ${night.dreams.length} 次梦 · 被吵醒 ${night.wokeCount} 次）\n\n`;
+    try {
+      mkdirSync(dirname(file), { recursive: true });
+      appendFileSync(file, entry, 'utf8');
+    } catch (error) {
+      this.host?.log.warn('作息:梦的小本本写不进去', { error });
+    }
+  }
+
+  /** 做梦那一轮结束：把抓到的正文写进小本本。 */
+  onTurnEnded(): void {
+    const turn = this.dreamTurn;
+    this.dreamTurn = null;
+    if (!turn) return;
+    const text = sanitizeQuote(turn.deltas.join(''));
+    const dream = this.state.sleep.dreams[this.state.sleep.dreams.length - 1];
+    if (dream) {
+      dream.text = text;
+      this.appendDreamDiary(dream);
+      this.host?.log.info('作息:梦已记录', { type: dream.type, chars: text.length });
+    }
+    this.persist();
+  }
+  /**
    * 睡眠时段内数「被吵醒」：同一场打扰按 `wakeGapMinutes` 合并；
    * 每计一次就落一条归档事件，并按需投一条 piggyback 的起床气提示。
    */
@@ -911,6 +1044,10 @@ export class RhythmWorld implements World {
     const previous = this.lastActivitySeen;
     if (latest.at > previous) this.lastActivitySeen = latest.at;
     if (!latest.type) return;
+    if (this.state.sleep.dreamPlan) {
+      this.state.sleep.dreamPlan = null;
+      this.host?.log.debug('作息:梦被吵醒取消');
+    }
     // 有人来找它：无论这一下是否计一次「被吵醒」，退避都从头开始。
     this.state.unanswered = 0;
     this.attempt = null;
@@ -975,16 +1112,23 @@ export class RhythmWorld implements World {
    * `sleep` / `wake` 用 flush（要及时送到）；`woken` 用 piggyback（只搭着正在进行的一轮走），
    * 并且超过保鲜期就作废——永远不在对话结束后突然冒出「你刚才被吵醒了」。
    */
-  private sendHint(kind: HintKind, now: number, vars: { by?: string; count?: number } = {}): void {
+  private sendHint(
+    kind: HintKind,
+    now: number,
+    vars: { by?: string; count?: number; type?: string } = {},
+    extraLines: readonly string[] = [],
+  ): void {
     const host = this.host;
     if (!host) return;
     const limits = this.limits();
     const template = this.readMessages()[this.opts.language()][kind];
-    const text = fillTemplate(template, {
+    const base = fillTemplate(template, {
       at: shortTime(this.opts.timezone, new Date(now)),
       by: vars.by ?? '',
       count: vars.count === undefined ? '' : String(vars.count),
+      type: vars.type ?? '',
     });
+    const text = extraLines.length ? `${base}\n${extraLines.join('\n')}` : base;
     const staleAfterMs = limits.wakeHintSeconds * 1000;
     host.log.info('作息:睡眠提示', { kind, phase: this.phaseState });
     host.pushDeferred({

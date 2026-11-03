@@ -78,6 +78,11 @@
 | `pauseWhenLocked` | false | 锁屏期间跳过叫醒（默认关：锁屏时可能更想用微信） |
 | `awayHint` | true | 是否把探测结果写进正文（关掉只写日志） |
 | `awayIdleProbe` | false | 额外用 Add-Type 取键鼠空闲秒数（会运行时编译，可能触发杀软；默认关） |
+| `dreamEnabled` | false | 睡眠时段里随机做梦（默认关；开启后由用户决定） |
+| `dreamChance` | 0.3 | 每夜做梦的概率 |
+| `dreamAfterMinutes` | 60 | 入睡多久后才可能做梦 |
+| `dreamMaxPerNight` | 1 | 一夜最多几次梦 |
+| `dreamDiary` | `workspace/partner/dreams.md` | 梦的小本本路径（相对部署目录）；留空不写 |
 | `dryRun` | false | 影子模式：只算什么时候该叫、写日志与状态，不投递任何事件 |
 | `contextAware` | true | 叫醒时带「安静多久 / 它上次开口有没有被接」这些事实 |
 | `contextQuotes` | true | 上下文可能丢失时引用原话（40 字，剥掉渠道标记） |

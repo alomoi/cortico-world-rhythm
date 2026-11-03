@@ -102,6 +102,15 @@
   「屏幕已经 N 分钟没有输入」。不给渠道建议。
 - `pauseWhenLocked`（缺省关）：打开后锁屏期间跳过叫醒，解锁后下一拍再说。
 - `status.json` 增加 `presence` 字段（state/locked/idleSeconds）。
+### P6：做梦（已实现，未部署）
+
+- 睡眠时段内**入夜掷一次骰子**（做不做 / 几点 / 什么类型），一夜最多 `dreamMaxPerNight` 次；被吵醒则取消。
+- 到点投一条 `rhythm.hint`（`meta.kind = 'dream'`），正文由 `messages.json` 的 `dream` 模板与 `dreamTypes` 词表决定，
+  明确要求「别说话、别用说话工具、别联系任何人」。
+- 用 `outputTap` 抓这一轮生成的正文，回合结束时追加到梦的小本本（`dreamDiary`，默认
+  `workspace/partner/dreams.md`）；抓不到就记「只记得做过这个梦」。
+- 早上的「该醒了」提示补一句事实（梦的内容 + 「要不要跟主人提，由你决定」），沿用 P3 的「只给事实」原则。
+- 旧的 `messages.json` 会自动补上 `dream` / `dreamTypes`，不覆盖用户已有文案。
 ## 0.2.2
 
 - 包简介换成中文（npm 页面与扩展市场显示）。

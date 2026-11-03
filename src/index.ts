@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 作息（Rhythm）：一个 Cortico World 扩展。
  *
  * 目标：让桌宠有自己的生活节律，而不只是"被叫醒一次"。挂上之后，一段时间没人跟 Coo 说话，
@@ -52,6 +52,7 @@ const definition: WorldDefinition<RhythmConfigSection> = {
     cfg: ctx.cfg,
     timezone: ctx.timezone,
     dataDir: ctx.dataDir,
+    botDir: ctx.botDir,
     language: () => modelLanguageOfConfigFile(join(ctx.botDir, 'config.json')),
   }),
   describe: DESCRIBE,

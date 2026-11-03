@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 发给桌宠的提示文案（「该睡了」「该醒了」「你被吵醒了」），独立成一个可编辑的 JSON 文件。
  *
  * 为什么单独放：这几句是「给 Coo 看的话」，调语气属于高阶玩法，但不适合塞进设置页的旋钮海洋。
@@ -12,12 +12,12 @@ import { dirname, join } from 'node:path';
 
 export type MessageLanguage = 'zh' | 'en';
 
-export type HintKind = 'sleep' | 'wake' | 'woken';
+export type HintKind = 'sleep' | 'wake' | 'woken' | 'dream';
 
 export interface RhythmMessages {
   version: 1;
-  zh: Record<HintKind, string>;
-  en: Record<HintKind, string>;
+  zh: Record<HintKind, string> & { dreamTypes: string[] };
+  en: Record<HintKind, string> & { dreamTypes: string[] };
 }
 
 /** 内置默认值：文件缺失时写到磁盘，也是文件损坏时的兜底。 */
@@ -27,11 +27,15 @@ export const DEFAULT_MESSAGES: RhythmMessages = {
     sleep: '[{at}] [作息] 到睡觉时间了。想睡的话可以用 pet_act 的 sleep 动作躺下（它会保持到你下一次动作）；不想睡就做自己的事，或者结束这一轮。',
     wake: '[{at}] [作息] 早上好，醒醒神。想动一动可以用 pet_act 的 stand 站起来，然后想做什么就做什么。',
     woken: '[{at}] [作息] 你刚才在睡觉，被 {by} 吵醒了（今夜第 {count} 次）。要不要带点起床气，你自己决定；不想理就结束这一轮。',
+    dream: '[{at}] [作息] 你正在熟睡，做了一个【{type}】的梦。梦的内容由你自己想，不用告诉任何人；想继续睡的话可以用 pet_act 的 sleep 保持睡姿。（这是梦，别说话、别用任何说话工具、别联系任何人。）',
+    dreamTypes: ['天马行空的', '快乐的', '舒心的', '关于主人的', '有点伤感的'],
   },
   en: {
     sleep: '[{at}] [rhythm] It is bedtime. If you feel like it, you can lie down with the pet_act motion "sleep" (it is held until your next action); if not, do your own thing or end this turn.',
     wake: '[{at}] [rhythm] Morning, time to wake up. You can stand up with the pet_act motion "stand" and then do whatever you like.',
     woken: '[{at}] [rhythm] You were asleep and {by} woke you up (wake-up #{count} tonight). Being a little grumpy about it is up to you; ignore it and end the turn if you would rather not.',
+    dream: '[{at}] [rhythm] You are fast asleep and dreaming a {type} dream. The dream is yours to invent; you do not have to tell anyone. If you want to keep sleeping, you can stay in the pet_act motion sleep. (This is a dream: do not speak, do not use any speech tool, do not contact anyone.)',
+    dreamTypes: ['wild', 'happy', 'cozy', 'about the person', 'a little sad'],
   },
 };
 
@@ -63,7 +67,7 @@ function normalize(raw: unknown): { messages: RhythmMessages; problems: string[]
       problems.push(`${language} must be an object`);
       continue;
     }
-    for (const kind of ['sleep', 'wake', 'woken'] as const) {
+    for (const kind of ['sleep', 'wake', 'woken', 'dream'] as const) {
       const value = (table as Record<string, unknown>)[kind];
       if (value === undefined) continue;
       if (!isText(value)) problems.push(`${language}.${kind} must be a non-empty string`);
@@ -88,8 +92,24 @@ export function loadMessages(file: string): { messages: RhythmMessages; problems
     return { messages: DEFAULT_MESSAGES, problems: [] };
   }
   try {
-    const raw = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
-    return normalize(raw);
+    const raw: unknown = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+    const normalized = normalize(raw);
+    // 旧版文件没有 dream/dreamTypes：补进文件里，方便高阶用户直接改（不覆盖用户已有内容）
+    if (normalized.problems.length === 0 && typeof raw === 'object' && raw !== null) {
+      const bag = raw as Record<string, unknown>;
+      let changed = false;
+      for (const language of ['zh', 'en'] as const) {
+        const table = bag[language];
+        if (typeof table !== 'object' || table === null) continue;
+        const target = table as Record<string, unknown>;
+        if (!('dream' in target)) { target.dream = DEFAULT_MESSAGES[language].dream; changed = true; }
+        if (!('dreamTypes' in target)) { target.dreamTypes = DEFAULT_MESSAGES[language].dreamTypes; changed = true; }
+      }
+      if (changed) {
+        try { writeFileSync(file, `${JSON.stringify(bag, null, 2)}\n`, 'utf8'); } catch { /* 写不进去就用内存里的 */ }
+      }
+    }
+    return normalized;
   } catch (error) {
     return { messages: DEFAULT_MESSAGES, problems: [`not valid JSON: ${message(error)}`] };
   }

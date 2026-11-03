@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 作息（Rhythm）World 的配置段与 WebUI 配置组。
  *
  * `worlds.rhythm` 是组装层给出的活引用：WebUI 在「模块」页改值时就地写进这个对象，
@@ -71,6 +71,16 @@ export interface RhythmConfigSection extends WorldSection {
   awayHint: boolean;
   /** 是否用 Add-Type 取键鼠空闲秒数（会触发运行时编译，默认关）。 */
   awayIdleProbe: boolean;
+  /** 夜里做梦总开关（默认关）。 */
+  dreamEnabled: boolean;
+  /** 每夜做梦的概率（0–1）。 */
+  dreamChance: number;
+  /** 入睡多久后才可能做梦。 */
+  dreamAfterMinutes: number;
+  /** 一夜最多几次梦。 */
+  dreamMaxPerNight: number;
+  /** 梦的小本本路径（相对部署目录）；留空不写。 */
+  dreamDiary: string;
   /**
    * 只用桌宠与控制台的旧白名单判断「有人回来了」。
    * false（缺省）= 任何渠道的人侧事件都算：微信、QQ、B 站、Discord 等扩展都自动生效。
@@ -114,6 +124,11 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   pauseWhenLocked: false,
   awayHint: true,
   awayIdleProbe: false,
+  dreamEnabled: false,
+  dreamChance: 0.3,
+  dreamAfterMinutes: 60,
+  dreamMaxPerNight: 1,
+  dreamDiary: 'workspace/partner/dreams.md',
   knownChannelsOnly: false,
   activityIgnore: '',
   onlyWhenIdle: true,
@@ -288,6 +303,42 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           type: 'boolean',
           title: t.awayIdleProbeTitle,
           description: t.awayIdleProbeDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.dreamEnabled`]: {
+          type: 'boolean',
+          title: t.dreamEnabledTitle,
+          description: t.dreamEnabledDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.dreamChance`]: {
+          type: 'number',
+          title: t.dreamChanceTitle,
+          description: t.dreamChanceDescription,
+          minimum: 0,
+          maximum: 1,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.dreamAfterMinutes`]: {
+          type: 'integer',
+          title: t.dreamAfterTitle,
+          description: t.dreamAfterDescription,
+          minimum: 10,
+          maximum: 720,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.dreamMaxPerNight`]: {
+          type: 'integer',
+          title: t.dreamMaxTitle,
+          description: t.dreamMaxDescription,
+          minimum: 1,
+          maximum: 3,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.dreamDiary`]: {
+          type: 'string',
+          title: t.dreamDiaryTitle,
+          description: t.dreamDiaryDescription,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.dryRun`]: {
