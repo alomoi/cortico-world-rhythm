@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * 行为冒烟测试：不需要 Coopanion，用假宿主与假时钟驱动 World 的计时逻辑。
  *
@@ -211,7 +211,7 @@ console.log('repeat nudge:');
   h.world.tick();
   check('repeat at repeatMinutes after the previous nudge', h.pushes.length === 2);
   const text = h.pushes[1].spec.render();
-  check('repeat text is marked as another quiet stretch', typeof text === 'string' && text.includes('还是没人来'), String(text));
+  check('repeat uses the same template with a larger quiet span', typeof text === 'string' && text.includes('安静了约 40 分钟') && text.includes('工具'), String(text));
   await h.world.stop();
 }
 
@@ -1232,7 +1232,7 @@ console.log('closing lines rotate:');
   advance(5);
   h.world.tick();
   const texts = h.pushes.map((p) => String(p.spec.render()));
-  check('three wake-ups use three different closings', new Set(texts.map((x) => x.split('\n').at(-1))).size === 3, texts.join(' || '));
+  check('three wake-ups share one stable closing', new Set(texts.map((x) => x.split('\n').at(-1))).size === 1, texts.join(' || '));
   check('every closing keeps the tools option', texts.every((x) => x.split('\n').at(-1).includes('工具')), texts.join(' || '));
   check('none of them mentions a specific channel', texts.every((x) => !x.includes('气泡')), texts.join(' || '));
   await h.world.stop();

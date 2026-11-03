@@ -62,36 +62,19 @@ export interface NudgeLine {
 /** 正文上限（字符数）；超了先丢引用。 */
 const MAX_BODY_CHARS = 320;
 
-const CLOSINGS: Record<ModelLanguage, readonly string[]> = {
-  zh: [
-    '想说话就用你平时的方式说一句，想做事就用工具，不想就结束这一轮。',
-    '想说就说一句，想做事也可以用工具，不想就继续安静。',
-    '一直没人来。想做点自己的事就用工具，想说话也可以，不想就结束这一轮。',
-  ],
-  en: [
-    'If you want to say something, say it the way you usually do; use your tools if you have something to do; otherwise end this turn.',
-    'Still nobody. Say something if you feel like it, use your tools if you have things to do, or stay quiet.',
-    'Nobody has come for a while. Use your tools if you have things to do, say something, or end this turn.',
-  ],
+/** 唯一的收尾句：每次都保留「说话 / 用工具 / 结束」三个选项。 */
+const CLOSING: Record<ModelLanguage, string> = {
+  zh: '想说话就用你平时的方式说一句，想做事就用工具，不想就结束这一轮。',
+  en: 'If you want to say something, say it the way you usually do; use your tools if you have something to do; otherwise end this turn.',
 };
-
 const OPENINGS: Record<ModelLanguage, (line: NudgeLine) => string> = {
-  zh: (line) => line.again
-    ? `[${line.at}] [作息] 安静了约 ${line.quietMinutes} 分钟，还是没人来。`
-    : `[${line.at}] [作息] 安静了约 ${line.quietMinutes} 分钟，没人跟你说话。`,
-  en: (line) => line.again
-    ? `[${line.at}] [rhythm] About ${line.quietMinutes} quiet minutes again, and nobody has come.`
-    : `[${line.at}] [rhythm] It has been quiet for about ${line.quietMinutes} minutes; nobody is talking to you.`,
+  zh: (line) => `[${line.at}] [作息] 安静了约 ${line.quietMinutes} 分钟，没人跟你说话。`,
+  en: (line) => `[${line.at}] [rhythm] It has been quiet for about ${line.quietMinutes} minutes; nobody is talking to you.`,
 };
 
 const UNANSWERED_FACT: Record<ModelLanguage, string> = {
   zh: '你前面说过一句，对方还没接。',
   en: 'You spoke up earlier and nobody has answered yet.',
-};
-
-const closingFor = (language: ModelLanguage, round: number): string => {
-  const list = CLOSINGS[language];
-  return list[Math.min(Math.max(round, 1), list.length) - 1];
 };
 
 /**
@@ -127,7 +110,7 @@ export function nudgeText(language: ModelLanguage, line: NudgeLine): string {
   // 没有引用时，才用「对方没接」这句事实（避免和引用行重复）；away 不影响它
   if (line.unanswered && quotes.length === 0) optional.push(UNANSWERED_FACT[language]);
 
-  const closing = closingFor(language, line.round);
+  const closing = CLOSING[language];
   optional.push(...quotes);
   const build = (extra: readonly string[]): string => [OPENINGS[language](line), ...extra, closing].join('\n');
 
