@@ -1296,6 +1296,7 @@ console.log('send receipts from the session record:');
   writeFileSync(join(dataDir, 'session-main.jsonl'), [
     record('call_ok', '[wx] 送达 09:25 32字'),
     record('call_fail', '[wx] 失败:上下文已过期'),
+    record('call_fail2', '[wx] 失败:24 小时窗口已过期'),
   ].join('\n') + '\n', 'utf8');
 
   h.world.attempt = { at: clock, spoke: true, replied: false, calls: ['call_fail'] };
@@ -1309,6 +1310,16 @@ console.log('send receipts from the session record:');
   h.world.attempt = { at: clock, spoke: true, replied: false, calls: ['call_missing'] };
   h.world.settleAttempt();
   check('a missing receipt falls back to counting', h.world.state.unanswered === 2, String(h.world.state.unanswered));
+
+  // 微信失败但改用气泡成功：这一轮确实送达了，要算
+  h.world.attempt = { at: clock, spoke: true, replied: false, calls: ['call_fail', 'call_ok'] };
+  h.world.settleAttempt();
+  check('a fallback success still counts', h.world.state.unanswered === 3, String(h.world.state.unanswered));
+
+  // 全部失败：不计
+  h.world.attempt = { at: clock, spoke: true, replied: false, calls: ['call_fail', 'call_fail2'] };
+  h.world.settleAttempt();
+  check('when every receipt failed it does not count', h.world.state.unanswered === 3, String(h.world.state.unanswered));
   await h.world.stop();
 
   const off = harness({ backoffAfter: 1, verifySpeakReceipts: false });

@@ -431,20 +431,26 @@ export class RhythmWorld implements World {
    * 去会话记录里核对发送回执。
    * 主 session 的上下文写在 `<dataDir>/session-main.jsonl`，工具回执是 `function_call_output` 记录，
    * 按 call_id 能对回我们自己看到的那次调用。只读文件尾部，不整读、不落盘、不记正文。
-   * 判定：回执里出现失败标记才算失败；没有回执或没有标记 → 按原来的行为处理（可能是成功）。
+   *
+   * 一轮里可能调用多次说话工具（比如微信失败、改用气泡成功）：
+   * - 只要有一条回执没有失败标记 → 认为「确实送到了」，这一轮照常计入；
+   * - 只有全部有回执的都失败 → 才排除；
+   * - 一条回执都没找到 → 按原来的行为处理。
    */
-  private receiptFailureFor(calls: readonly string[]): string | null {
+  private receiptStatusFor(calls: readonly string[]): { delivered: boolean; failed: string | null } {
     const wanted = new Set(calls);
+    let delivered = false;
+    let failed: string | null = null;
     let fd: number;
     try {
       fd = openSync(join(this.opts.dataDir, 'session-main.jsonl'), 'r');
     } catch {
-      return null;
+      return { delivered: false, failed: null };
     }
     try {
       const size = fstatSync(fd).size;
       const length = Math.min(size, 512 * 1024);
-      if (length <= 0) return null;
+      if (length <= 0) return { delivered: false, failed: null };
       const buffer = Buffer.alloc(length);
       readSync(fd, buffer, 0, length, size - length);
       const lines = buffer.toString('utf8').split('\n');
@@ -461,11 +467,16 @@ export class RhythmWorld implements World {
         const item = record.item;
         if (!item || item.type !== 'function_call_output' || !item.call_id || !wanted.has(item.call_id)) continue;
         const text = typeof item.output === 'string' ? item.output : JSON.stringify(item.output ?? '');
-        if (FAILURE_MARKERS.some((marker) => text.includes(marker))) return text.slice(0, 60);
+        if (FAILURE_MARKERS.some((marker) => text.includes(marker))) {
+          if (!failed) failed = text.slice(0, 60);
+          continue;
+        }
+        // 有回执、且没有失败字样：这条确实送到了
+        delivered = true;
       }
-      return null;
+      return { delivered, failed };
     } catch {
-      return null;
+      return { delivered: false, failed: null };
     } finally {
       try { closeSync(fd); } catch { /* 关不上就算了 */ }
     }
@@ -519,9 +530,9 @@ export class RhythmWorld implements World {
     }
     // 回执写着失败（微信 24 小时窗口过期、网络错误等）：不算「没人理」
     if (this.limits().verifySpeakReceipts && attempt.calls.length) {
-      const receiptFailure = this.receiptFailureFor(attempt.calls);
-      if (receiptFailure) {
-        this.host?.log.info('作息:发送回执是失败，不计入退避', { receipt: receiptFailure });
+      const receipts = this.receiptStatusFor(attempt.calls);
+      if (!receipts.delivered && receipts.failed) {
+        this.host?.log.info('作息:发送回执全是失败，不计入退避', { receipt: receipts.failed });
         return;
       }
     }
