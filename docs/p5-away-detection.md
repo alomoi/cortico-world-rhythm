@@ -1,6 +1,6 @@
 ﻿# P5 候选功能 · 把「主人在不在电脑前」交给插件
 
-> 状态：**代码已实现（2026-11-03），本地 228 条断言全绿；尚未部署**，按规则等当前实机测试收尾后随批次上。
+> 状态：**代码已实现（2026-11-03），本地 236 条断言全绿；尚未部署**，按规则等当前实机测试收尾后随批次上。
 > 来源：主人 2026-11-02 的说明 + Coo 自己写的 `workspace/partner/idle.ps1` / `probe.cs` /
 > `self-initiated-chat.md`（只读查看，未改动）。
 
@@ -25,14 +25,28 @@ Coo 的做法（见 `self-initiated-chat.md`）：
 
 ---
 
-## 2. 探测方式（沿用已验证的 Win32 组合）
+## 2. 探测方式（默认不编译任何代码）
+
+**默认只查锁屏**，用一条纯 cmdlet：
+
+```
+powershell.exe -NoProfile -NonInteractive -Command "Get-Process -Name LogonUI, LockApp ..."
+```
+
+- Win10/11 锁屏时，`LogonUI`（安全桌面）或 `LockApp` 至少有一个在跑；
+- 只读进程名：不写文件、不联网、不改注册表、不用 `-EncodedCommand`、不用 `-ExecutionPolicy Bypass`；
+- 兼容 Windows 自带的 **PowerShell 5.1**（脚本只用最基础的语法，不需要 PowerShell 7）。
+
+**可选：多测一个「键鼠空闲多久」**（`awayIdleProbe`，默认关）。
+
+- 需要 `Add-Type` 内联编译 C# 调 `GetLastInputInfo`，与 Coo 的 `probe.cs` 等价；
+- 代价：运行时会编译代码（杀软/EDR 的常见告警点），首次约 1 秒；
+- 代码按 C# 5 / PS 5.1 写；只有在用户显式打开时才走这条路径。
 
 | 项 | 做法 | 备注 |
 |---|---|---|
-| 锁屏 | `OpenInputDesktop` + `GetUserObjectInformation` 取输入桌面名 | Coo 实测：锁屏时拿不到（`err=5`）→ 视为 locked |
-| 空闲 | `GetLastInputInfo` → 与 `Environment.TickCount` 相减 | 无需管理员 |
-| 实现载体 | 插件内嵌一段等价 PowerShell（`Add-Type` 加载内联 C#） | 不依赖 Coo 的工作区文件 |
-| 调用时机 | **只在叫醒到点那一次**（影子模式也算一次） | 不在 5 秒 tick 里跑 |
+| 调用时机 | 只在叫醒到点那一次（影子模式也算一次） | 不在 5 秒 tick 里跑 |
+| 缓存 | 60 秒 | 同一分钟内不重复 spawn |
 | 超时/失败 | 2 秒超时；失败返回 `unknown`，正文不加任何假设 | 保守优先 |
 | 平台 | 仅 Windows；其他平台直接 `unknown` | 不改变原有行为 |
 
@@ -90,10 +104,11 @@ Coo 的做法（见 `self-initiated-chat.md`）：
 
 | 键 | 类型 | 缺省 | 说明 |
 |---|---|---|---|
-| `awayDetection` | boolean | **true**（仅 Windows 生效，非 Windows 自动 unknown） | 叫醒时探测锁屏/空闲，并把事实写进正文 |
+| `awayDetection` | boolean | **true**（仅 Windows 生效；默认只查锁屏，不编译） | 叫醒时探测锁屏/空闲，并把事实写进正文 |
 | `awayIdleMinutes` | integer | 10 | 超过这么多分钟无输入，正文提示「可能不在」 |
 | `pauseWhenLocked` | boolean | **false** | 打开后锁屏期间跳过叫醒（解锁后补） |
 | `awayHint` | boolean | true | 是否把探测结果写进正文（关掉只写日志） |
+| `awayIdleProbe` | boolean | **false** | 额外取键鼠空闲秒数（Add-Type，会编译） |
 
 ---
 

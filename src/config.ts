@@ -69,6 +69,8 @@ export interface RhythmConfigSection extends WorldSection {
   pauseWhenLocked: boolean;
   /** 是否把探测结果写进叫醒正文。 */
   awayHint: boolean;
+  /** 是否用 Add-Type 取键鼠空闲秒数（会触发运行时编译，默认关）。 */
+  awayIdleProbe: boolean;
   /**
    * 只用桌宠与控制台的旧白名单判断「有人回来了」。
    * false（缺省）= 任何渠道的人侧事件都算：微信、QQ、B 站、Discord 等扩展都自动生效。
@@ -111,6 +113,7 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   awayIdleMinutes: 10,
   pauseWhenLocked: false,
   awayHint: true,
+  awayIdleProbe: false,
   knownChannelsOnly: false,
   activityIgnore: '',
   onlyWhenIdle: true,
@@ -279,6 +282,12 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           type: 'boolean',
           title: t.awayHintTitle,
           description: t.awayHintDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.awayIdleProbe`]: {
+          type: 'boolean',
+          title: t.awayIdleProbeTitle,
+          description: t.awayIdleProbeDescription,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.dryRun`]: {

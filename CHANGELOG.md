@@ -95,7 +95,8 @@
   渠道也可选推 `<前缀>.send-failed` 事件，作为补充信号。
 ### P5：主人状态探测（已实现，未部署）
 
-- 新增 `src/presence.ts`：叫醒到点 spawn 一次 PowerShell（内联 C#：`OpenInputDesktop` + `GetLastInputInfo`），
+- 新增 `src/presence.ts`：**默认只查锁屏**（纯 cmdlet 读 `LogonUI`/`LockApp` 进程，不编译、不写盘、不改策略），
+  兼容 Windows 自带 PowerShell 5.1；可选 `awayIdleProbe` 用 `Add-Type` 取键鼠空闲秒数（默认关，避免触发杀软）。
   2 秒超时、60 秒缓存；非 Windows 直接 `unknown`。任何失败都不影响叫醒。
 - 叫醒正文增加事实行：锁屏 → 「主人现在不在电脑前（屏幕锁着）」；空闲超过 `awayIdleMinutes` →
   「屏幕已经 N 分钟没有输入」。不给渠道建议。

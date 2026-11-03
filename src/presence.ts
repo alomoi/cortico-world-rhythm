@@ -1,21 +1,23 @@
 /**
- * 探测「主人是否在电脑前」：锁屏 / 键鼠空闲时长。
+ * 探测「主人是否在电脑前」。
  *
- * 为什么不用 Electron 的 powerMonitor：Coopanion 的 Core 是主进程 fork 出来的子进程
- * （`core-host.cjs` 里 `fork(core/boot.ts)`），子进程里 `require('electron')` 只拿到可执行文件路径。
- * 所以走 Windows 本地探测：spawn 一个短命 PowerShell，内联 C# 调 user32。
+ * 为什么不用 Electron 的 powerMonitor：Coopanion 的 Core 是主进程 fork 出来的子进程，
+ * 子进程里 `require('electron')` 只拿到可执行文件路径。所以走 Windows 本地探测。
  *
- * 这是 Coo 自己写过的同一套办法（`workspace/partner/probe.cs` + `idle.ps1`），
- * 实测锁屏时 `OpenInputDesktop` 拿不到输入桌面（err=5），据此判 locked。
+ * **默认只查锁屏，不编译任何代码**（避免触发杀软/EDR 的运行时编译检测）：
+ *   powershell.exe -NoProfile -NonInteractive -Command "Get-Process -Name LogonUI,LockApp ..."
+ * 只读进程名，不写文件、不联网、不改注册表，PS 5.1 完全支持。
  *
- * 只读系统状态：不读窗口标题、不截屏、不落盘。
+ * 需要「键鼠空闲多久」时，可以打开 `full`：用 Add-Type 内联编译 C# 调 user32。
+ * 这条路径更准，但会触发运行时编译（杀软常见告警点），所以默认关闭、由用户显式选择；
+ * 代码按 C# 5 / Windows PowerShell 5.1 写，不依赖 PowerShell 7。
  */
 import { execFile } from 'node:child_process';
 
 export interface Presence {
-  /** 输入桌面不是 Default（锁屏/登录界面）→ true；拿不到结论 → null。 */
+  /** 锁屏/登录界面在显示 → true；拿不到结论 → null。 */
   locked: boolean | null;
-  /** 键鼠空闲秒数；拿不到 → null。 */
+  /** 键鼠空闲秒数；没开 full 模式或拿不到 → null。 */
   idleSeconds: number | null;
   /** 探测完成的时刻（epoch ms）。 */
   at: number;
@@ -23,11 +25,18 @@ export interface Presence {
 
 export const UNKNOWN_PRESENCE: () => Presence = () => ({ locked: null, idleSeconds: null, at: Date.now() });
 
+/** 只查锁屏：纯 cmdlet，不编译、不写盘。Win10/11 锁屏时 LogonUI 与 LockApp 至少有一个在跑。 */
+const LOCK_SCRIPT = [
+  '$ErrorActionPreference = \'SilentlyContinue\'',
+  '$procs = Get-Process -Name LogonUI, LockApp -ErrorAction SilentlyContinue',
+  'if ($null -ne $procs) { Write-Output \'locked=true\' } else { Write-Output \'locked=false\' }',
+].join('; ');
+
 /**
- * 内联的 PowerShell：Add-Type 加载 C#，读输入桌面名与空闲秒数。
- * 与 Coo 的 probe.cs 等价；输出三行 `key=value`，好解析、不依赖 JSON。
+ * 完整探测：锁屏 + 空闲秒数。Add-Type 会编译 C#，默认不用。
+ * 与 Coo 的 `workspace/partner/probe.cs` 等价（`OpenInputDesktop` + `GetLastInputInfo`）。
  */
-const PROBE_SCRIPT = `
+const FULL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @"
 using System;
@@ -63,29 +72,46 @@ Write-Output "desktop=$desk"
 Write-Output "idle_seconds=$idle"
 `;
 
-function parseProbe(stdout: string): { locked: boolean | null; idleSeconds: number | null } {
+/** 解析两种脚本的输出；任何缺项都留 null，由调用方当成 unknown。 */
+export function parseProbe(stdout: string): { locked: boolean | null; idleSeconds: number | null } {
   let desk: string | null = null;
   let idle: number | null = null;
+  let explicitLocked: boolean | null = null;
   for (const line of stdout.split(/\r?\n/)) {
     const text = line.trim();
     if (text.startsWith('desktop=')) desk = text.slice('desktop='.length).trim();
-    else if (text.startsWith('idle_seconds=')) {
+    else if (text.startsWith('locked=')) {
+      const value = text.slice('locked='.length).trim().toLowerCase();
+      if (value === 'true') explicitLocked = true;
+      else if (value === 'false') explicitLocked = false;
+    } else if (text.startsWith('idle_seconds=')) {
       const value = Number(text.slice('idle_seconds='.length).trim());
       if (Number.isFinite(value) && value >= 0) idle = value;
     }
   }
-  if (desk === null) return { locked: null, idleSeconds: idle };
-  // 锁屏时输入桌面是 Winlogon；拿不到（err=5）也视为锁屏——这与 Coo 的实测一致
-  const locked = desk !== 'Default';
-  return { locked, idleSeconds: idle };
+  if (desk !== null) {
+    // 锁屏时输入桌面是 Winlogon；拿不到（err=5）也视为锁屏——与 Coo 的实测一致
+    return { locked: desk !== 'Default', idleSeconds: idle };
+  }
+  return { locked: explicitLocked, idleSeconds: idle };
+}
+
+export interface DetectOptions {
+  timeoutMs?: number;
+  /** true = 用 Add-Type 取空闲秒数（会触发运行时编译）；缺省 false，只查锁屏。 */
+  full?: boolean;
 }
 
 /**
  * 探测一次；任何失败都返回 unknown，绝不让探测拖慢或打断叫醒。
- * 超时也当作 unknown：宁可不知道，也不要误判「主人不在」。
+ * 显式使用 `powershell.exe`（Windows 自带 5.1），不依赖 PowerShell 7；
+ * 脚本里不用 `??`、三元等 PS7 语法。
  */
-export function detectPresence(timeoutMs = 2000): Promise<Presence> {
+export function detectPresence(opts: DetectOptions = {}): Promise<Presence> {
   if (process.platform !== 'win32') return Promise.resolve(UNKNOWN_PRESENCE());
+  const timeoutMs = opts.timeoutMs ?? 2000;
+  const script = opts.full ? FULL_SCRIPT : LOCK_SCRIPT;
+
   return new Promise((resolve) => {
     let settled = false;
     const done = (presence: Presence): void => {
@@ -96,7 +122,8 @@ export function detectPresence(timeoutMs = 2000): Promise<Presence> {
     try {
       const child = execFile(
         'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', PROBE_SCRIPT],
+        // 不用 -ExecutionPolicy Bypass：-Command 不受执行策略限制，少一个可疑参数
+        ['-NoProfile', '-NonInteractive', '-Command', script],
         { timeout: timeoutMs, windowsHide: true, maxBuffer: 64 * 1024 },
         (error, stdout) => {
           if (error) {

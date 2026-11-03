@@ -31,6 +31,7 @@ const { stateFilePath } = await import('../src/state.ts');
 const { messagesPath } = await import('../src/messages.ts');
 const windows = await import('../src/windows.ts');
 const ctxmod = await import('../src/context.ts');
+const presenceMod = await import('../src/presence.ts');
 const { fakeWorldContext } = await import('cortico/extensions/dry-mount.ts');
 const { nullLogger } = await import('cortico/core/util.ts');
 
@@ -165,6 +166,7 @@ console.log('config defaults:');
   check('awayIdleMinutes defaults to 10', d.awayIdleMinutes === 10);
   check('pauseWhenLocked defaults off', d.pauseWhenLocked === false);
   check('awayHint defaults on', d.awayHint === true);
+  check('idle probing defaults off (no runtime compile)', d.awayIdleProbe === false);
   check('speakTools defaults to the four known send tools', /pet_say/.test(d.speakTools) && /clawbridge_send/.test(d.speakTools));
   check('speakIgnore defaults empty', d.speakIgnore === '');
   check('loose speak matching defaults off', d.speakMatchAnywhere === false);
@@ -1437,6 +1439,43 @@ console.log('presence: disabled means no probe at all:');
   check('no probe when the feature is off', probes === 0);
   check('and the prompt stays plain', !String(h.pushes[0]?.spec.render()).includes('电脑前'));
   await h.world.stop();
+}
+
+// ── 31. 探测脚本与模式 ────────────────────────────────────────────────────
+console.log('presence script parsing:');
+{
+  check('lock-only output parses', String(presenceMod.parseProbe('locked=true').locked) === 'true');
+  check('lock-only false parses', presenceMod.parseProbe('locked=false').locked === false);
+  const full = presenceMod.parseProbe('desktop=Default\nidle_seconds=12.5');
+  check('full output gives desktop and idle', full.locked === false && full.idleSeconds === 12.5);
+  const winlogon = presenceMod.parseProbe('desktop=Winlogon\nidle_seconds=3');
+  check('Winlogon counts as locked', winlogon.locked === true);
+  check('no output means unknown', presenceMod.parseProbe('').locked === null);
+}
+
+console.log('presence: probe mode follows the setting:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ awayDetection: true });
+  let seen = null;
+  h.world.opts.detectPresence = async (opts) => { seen = opts; return { locked: false, idleSeconds: null, at: clock }; };
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  await settlePresence(h);
+  check('lock-only probe by default', seen?.full === false, JSON.stringify(seen));
+  await h.world.stop();
+
+  at('2026-11-02T09:00:00+08:00');
+  const h2 = harness({ awayDetection: true, awayIdleProbe: true });
+  let seen2 = null;
+  h2.world.opts.detectPresence = async (opts) => { seen2 = opts; return { locked: false, idleSeconds: 600, at: clock }; };
+  await boot(h2);
+  advance(15);
+  h2.world.tick();
+  await settlePresence(h2);
+  check('full probe when the setting is on', seen2?.full === true, JSON.stringify(seen2));
+  await h2.world.stop();
 }
 
 Date.now = realNow;

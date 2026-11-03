@@ -107,7 +107,7 @@ export interface RhythmOptions {
   /** 模型文本语言；每条事件渲染时现取。 */
   language: () => ModelLanguage;
   /** 主人状态探测；测试可注入，缺省用本机 Windows 探测。 */
-  detectPresence?: (timeoutMs?: number) => Promise<Presence>;
+  detectPresence?: (opts?: { timeoutMs?: number; full?: boolean }) => Promise<Presence>;
 }
 
 interface Limits {
@@ -133,6 +133,7 @@ interface Limits {
   awayIdleMinutes: number;
   pauseWhenLocked: boolean;
   awayHint: boolean;
+  awayIdleProbe: boolean;
   knownChannelsOnly: boolean;
   onlyWhenIdle: boolean;
 }
@@ -613,6 +614,7 @@ export class RhythmWorld implements World {
       awayIdleMinutes: Math.floor(numberIn(cfg.awayIdleMinutes, 10, 1, 720)),
       pauseWhenLocked: cfg.pauseWhenLocked === true,
       awayHint: cfg.awayHint !== false,
+      awayIdleProbe: cfg.awayIdleProbe === true,
       knownChannelsOnly: cfg.knownChannelsOnly === true,
       onlyWhenIdle: cfg.onlyWhenIdle !== false,
     };
@@ -1024,8 +1026,9 @@ export class RhythmWorld implements World {
     if (!this.presencePending) {
       const detect = this.opts.detectPresence
         ?? (typeof process !== 'undefined' && process.platform === 'win32' ? detectPresence : async () => UNKNOWN_PRESENCE());
+      const full = this.limits().awayIdleProbe;
       this.presencePending = Promise.resolve()
-        .then(() => detect(2000))
+        .then(() => detect({ timeoutMs: 2000, full }))
         .catch(() => UNKNOWN_PRESENCE())
         .then((presence) => {
           this.presenceCache = { at: Date.now(), presence };

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 人读的界面文案（World 名、配置组标题与说明、状态灯），中文与英文两版。
  * 与模型读到的正文（model-text.ts）分开：这里只给控制台看。
  */
@@ -86,6 +86,8 @@ export interface RhythmUi {
   pauseLockedDescription: string;
   awayHintTitle: string;
   awayHintDescription: string;
+  awayIdleProbeTitle: string;
+  awayIdleProbeDescription: string;
   dryRunTitle: string;
   dryRunDescription: string;
   contextAwareTitle: string;
@@ -161,6 +163,8 @@ const zh: RhythmUi = {
   pauseLockedDescription: '打开后，屏幕锁着时跳过这次叫醒，等解锁后的下一拍再说。默认关——锁屏时它可能更想用微信找你。',
   awayHintTitle: '把探测结果写进正文',
   awayHintDescription: '关掉后只写日志、不改正文。',
+  awayIdleProbeTitle: '额外探测键鼠空闲（会编译代码）',
+  awayIdleProbeDescription: '默认只查锁屏（纯 cmdlet，不编译）。打开后用 Add-Type 调 Win32 取空闲秒数，更准确，但运行时会编译 C#，可能触发杀软告警，且首次约 1 秒。',
   contextAwareTitle: '叫醒时带上最近对话的事实',
   contextAwareDescription: '告诉 Coo「安静了多久、它上次开口有没有被接」。默认开；关掉就回到最朴素的叫醒。',
   contextQuotesTitle: '上下文可能丢失时引用原话',
@@ -250,6 +254,8 @@ const en: RhythmUi = {
   pauseLockedDescription: 'Skips the wake-up while locked and waits for the next tick after unlocking. Off by default: it may prefer WeChat when you are away.',
   awayHintTitle: 'Put the probe result in the prompt',
   awayHintDescription: 'When off, the result only goes to the log.',
+  awayIdleProbeTitle: 'Also probe keyboard/mouse idle time (compiles code)',
+  awayIdleProbeDescription: 'By default only the lock state is checked with plain cmdlets. Turning this on uses Add-Type and Win32 to read idle seconds: more precise, but it compiles C# at runtime (may trip antivirus) and takes about a second.',
   contextAwareTitle: 'Tell the bot the recent facts',
   contextAwareDescription: 'Includes how long it has been quiet and whether its last outreach was answered. On by default; off gives the plain wake-up.',
   contextQuotesTitle: 'Quote the last lines when context may be stale',
