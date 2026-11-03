@@ -84,6 +84,13 @@
 - **微信兜底**：`outputTap` 抓 `clawbridge_send` 等说话工具的参数，补上「它上次说了什么」。
 - 新增配置：`dryRun`、`contextAware`、`contextQuotes`、`contextStaleMinutes`；
   `status.json` 增加 `plan.nextNudgeAt / shadow`。
+### 渠道别名与退避的两条例外
+
+- 新增 `channelAliases`：`clawbridge=微信`、`desktop-pet=桌宠`、`console=控制台`、`qq=QQ`；
+  提示文案里的 `{by}` 用可读名字，不再出现 `clawbridge.message` 这种技术名。
+- 退避不计「回话」：叫醒那一轮如果期间有人说过话，视为回复而不是主动搭话。
+- 退避不计「发送失败」：渠道若推 `<前缀>.send-failed`（`meta.tool` 记工具名），这一轮不算没人理。
+  clawbridge 尚未实现该事件（需要一次小改动）。
 ## 0.2.2
 
 - 包简介换成中文（npm 页面与扩展市场显示）。
