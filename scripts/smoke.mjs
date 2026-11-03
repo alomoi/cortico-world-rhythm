@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * 行为冒烟测试：不需要 Coopanion，用假宿主与假时钟驱动 World 的计时逻辑。
  *
@@ -1587,6 +1587,46 @@ console.log('a fact line survives the away line:');
   const text = String(h.pushes[0]?.spec.render());
   check('the away line is there', text.includes('不在电脑前'), text);
   check('and the unanswered fact is not swallowed', text.includes('你前面说过一句，对方还没接'), text);
+  await h.world.stop();
+}
+
+// ── 33. 模板与事实行 ──────────────────────────────────────────────────────
+console.log('facts are AND, and dates survive midnight:');
+{
+  const { nudgeText } = await import('../src/model-text.ts');
+  const text = nudgeText('zh', {
+    at: '11-03 周一 00:30',
+    quietMinutes: 40,
+    again: false,
+    round: 1,
+    unanswered: true,
+    away: { kind: 'locked' },
+    quoteUser: { at: '11-02 23:50', text: '我先睡了' },
+    quoteSelf: null,
+  });
+  check('the away fact is present', text.includes('不在电脑前'), text);
+  check('the unanswered fact is present too', text.includes('你前面说过一句'), text);
+  check('the user quote is present', text.includes('对方最后一句') && text.includes('11-02 23:50'), text);
+  check('the closing keeps every option', text.includes('工具'), text);
+
+  const withSelf = nudgeText('zh', {
+    at: '11-03 00:30', quietMinutes: 40, again: false, round: 1, unanswered: true,
+    quoteSelf: { at: '23:50', text: '晚安', answered: false },
+  });
+  check('a self quote carries the unanswered note itself', withSelf.includes('还没人接话'), withSelf);
+  check('and the separate fact line is not duplicated', !withSelf.includes('你前面说过一句'), withSelf);
+}
+
+console.log('the opening carries the date:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h);
+  advance(10);
+  h.world.tick();
+  const hint = String(h.hints[0]?.spec.render());
+  check('hints show the month and day', /11-02/.test(hint), hint);
+  check('and the time', hint.includes('22:00'), hint);
   await h.world.stop();
 }
 

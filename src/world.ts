@@ -429,6 +429,23 @@ export class RhythmWorld implements World {
     return false;
   }
 
+  /** 给模型看的时间戳：`11-03 周二 14:05`（英文 `11-03 14:05`）。跨日时不会只剩一个孤零零的时刻。 */
+  private stamp(at: number): string {
+    const timezone = this.opts.timezone || undefined;
+    const day = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone, month: '2-digit', day: '2-digit',
+    }).format(new Date(at));
+    const time = shortTime(this.opts.timezone, new Date(at));
+    if (this.opts.language() === 'en') return `${day} ${time}`;
+    const weekday = new Intl.DateTimeFormat('zh-CN', { timeZone: timezone, weekday: 'short' }).format(new Date(at));
+    return `${day} ${weekday} ${time}`;
+  }
+
+  /** 引用里的时间：同一天只写 HH:MM，跨天补上日期。 */
+  private quoteStamp(at: number, now: number): string {
+    const sameDay = localDayKey(this.opts.timezone, at) === localDayKey(this.opts.timezone, now);
+    return sameDay ? shortTime(this.opts.timezone, new Date(at)) : this.stamp(at);
+  }
   /** 渠道别名：`clawbridge.message` → `微信`；没有别名就用前缀。 */
   private channelLabel(type: string): string {
     const raw = typeof this.opts.cfg.channelAliases === 'string' ? this.opts.cfg.channelAliases : '';
@@ -1124,7 +1141,7 @@ export class RhythmWorld implements World {
     const limits = this.limits();
     const template = this.readMessages()[this.opts.language()][kind];
     const base = fillTemplate(template, {
-      at: shortTime(this.opts.timezone, new Date(now)),
+      at: this.stamp(now),
       by: vars.by ?? '',
       count: vars.count === undefined ? '' : String(vars.count),
       type: vars.type ?? '',
@@ -1302,10 +1319,10 @@ export class RhythmWorld implements World {
         || now - this.lastActivitySeen >= limits.contextStaleMinutes * 60_000;
       if (limits.contextQuotes && stale) {
         if (thread.lastUser) {
-          quoteUser = { at: shortTime(this.opts.timezone, new Date(thread.lastUser.at)), text: thread.lastUser.text };
+          quoteUser = { at: this.quoteStamp(thread.lastUser.at, now), text: thread.lastUser.text };
         }
         if (said) {
-          quoteSelf = { at: shortTime(this.opts.timezone, new Date(said.at)), text: said.text, answered: said.answered };
+          quoteSelf = { at: this.quoteStamp(said.at, now), text: said.text, answered: said.answered };
         }
         if (quoteUser || quoteSelf) this.handoffAt = 0;
       }
@@ -1320,7 +1337,7 @@ export class RhythmWorld implements World {
     }
 
     return nudgeText(language, {
-      at: shortTime(this.opts.timezone, new Date(now)),
+      at: this.stamp(now),
       quietMinutes,
       again: round > 1,
       round,

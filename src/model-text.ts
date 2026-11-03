@@ -107,8 +107,8 @@ export function nudgeText(language: ModelLanguage, line: NudgeLine): string {
       ? `你上次说（${line.quoteSelf.at}）：「${line.quoteSelf.text}」${line.quoteSelf.answered ? '。' : '，还没人接话。'}`
       : `You last said (${line.quoteSelf.at}): "${line.quoteSelf.text}"${line.quoteSelf.answered ? '.' : ', and nobody has replied.'}`);
   }
-  // 没有引用时，才用「对方没接」这句事实（避免和引用行重复）；away 不影响它
-  if (line.unanswered && quotes.length === 0) optional.push(UNANSWERED_FACT[language]);
+  // 事实之间是 AND：away 不会挤掉它；只有 quoteSelf 已经写明「还没人接话」时才省略这一行
+  if (line.unanswered && !line.quoteSelf) optional.push(UNANSWERED_FACT[language]);
 
   const closing = CLOSING[language];
   optional.push(...quotes);
