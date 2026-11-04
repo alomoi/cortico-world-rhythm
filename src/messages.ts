@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 发给桌宠的提示文案（「该睡了」「该醒了」「你被吵醒了」），独立成一个可编辑的 JSON 文件。
  *
  * 为什么单独放：这几句是「给 Coo 看的话」，调语气属于高阶玩法，但不适合塞进设置页的旋钮海洋。
@@ -27,10 +27,10 @@ export const DEFAULT_MESSAGES: RhythmMessages = {
   version: 1,
   _note: '本文件可以自由修改。升级时只会补上缺失的键，不会覆盖你已经改过的内容；删掉本文件会按当前版本重新生成默认内容。',
   zh: {
-    sleep: '[{at}] [作息] 到睡觉时间了。想睡的话可以用 pet_act 的 sleep 动作躺下（它会保持到你下一次动作）；不想睡就做自己的事，或者结束这一轮。',
-    wake: '[{at}] [作息] 早上好，醒醒神。想动一动可以用 pet_act 的 stand 站起来，然后想做什么就做什么。',
+    sleep: '[{at}] [作息] 你的眼皮越来越重，到睡觉的时间了。\n想说话就用你平时的方式道个晚安；不想说话，就用一个能让你躺下的动作（比如睡眠）躺好。\n不管选哪种，做完就结束这一轮。',
+    wake: '[{at}] [作息] 你伸了个懒腰，在睡眠中醒来，新的一天开始了。\n想说话就用你平时的方式打个招呼；不想说话，就用一个能让你站起来的动作（比如站立）起身。\n不管选哪种，做完就结束这一轮。',
     woken: '[{at}] [作息] 你刚才在睡觉，{user}（{by}）把你吵醒了（今夜第 {count} 次）。要不要带点起床气，你自己决定；不想理就结束这一轮。',
-dream: '[{at}] [作息] 你正在熟睡，刚做了一个【{type}】的梦。\n围绕【{type}】这个主题，自己编一个具体的小片段：在哪里、发生了什么、有谁（可以是{user}、别的人或东西）。不要只写「做了一个某某的梦」。\n先做这一步（必做，不能跳过）：立刻把这条记录**追加写入** {diary}。文件不存在就创建；只追加，不要重写整篇。\n格式（照抄结构）：\n## {date} · {type}\n一两行梦的内容（要具体，别只写「做了一个梦」）；记不清细节也要留一条，写写当时的感受也行。\n最后加一句你此刻的心情。\n写完再决定睡不睡：想继续睡就躺回去保持睡姿，想醒着就随便。\n（做梦时不能说话、不能用任何说话工具、不能联系任何人。）',
+    dream: '[{at}] [作息] 你在熟睡中做了一个梦。梦境期间不要对外沟通、不要调用任何发送消息的工具、不要联系任何人；写日记文件不算对外沟通。\n生成一个【{type}】主题的梦境片段：包含场景、事件、角色（{user}、其他人或事物均可），不要笼统写「做了一个某某的梦」。\n【必做】只把下面两条分隔线之间的内容追加写入 {diary}（不存在就新建；只追加、不覆盖整篇；分隔线本身不要写）：\n=====模板开始=====\n## {date} · {type}梦\n一两行梦境内容；记不清细节就写当时的感受，不能为空。\n最后单独写一句当下的心情。\n=====模板结束=====\n写入完成后，保持睡姿继续睡，然后结束这一轮。',
     dreamTypes: ['天马行空的', '快乐的', '舒心的', '关于{user}的', '有点伤感的', '荒诞的', '冒险的', '怀旧的', '关于食物的', '紧张的', '安静的'],
     willing: [
       '上次你主动搭话，{user}没有回复。',
@@ -40,10 +40,10 @@ dream: '[{at}] [作息] 你正在熟睡，刚做了一个【{type}】的梦。\n
     ],
   },
   en: {
-    sleep: '[{at}] [rhythm] It is bedtime. If you feel like it, you can lie down with the pet_act motion "sleep" (it is held until your next action); if not, do your own thing or end this turn.',
-    wake: '[{at}] [rhythm] Morning, time to wake up. You can stand up with the pet_act motion "stand" and then do whatever you like.',
+    sleep: '[{at}] [rhythm] Your eyelids are getting heavy; it is time to sleep.\nIf you want to talk, say goodnight in your usual way; if not, lie down with an action that lets you sleep.\nEither way, end this turn when you are done.',
+    wake: '[{at}] [rhythm] You stretch and wake up from sleep; a new day begins.\nIf you want to talk, say hello in your usual way; if not, get up with an action that lets you stand.\nEither way, end this turn when you are done.',
     woken: '[{at}] [rhythm] You were asleep and {user} ({by}) woke you up (wake-up #{count} tonight). Being a little grumpy about it is up to you; ignore it and end the turn if you would rather not.',
-dream: '[{at}] [rhythm] You are fast asleep and just had a {type} dream.\nInvent a concrete little scene around the {type} theme: where it happened, what happened, and who was there ({user}, someone else, or something). Do not just write "I had a dream".\nFirst, and this is mandatory: immediately append a record to {diary}. Create the file if it does not exist; append only, never rewrite the whole file.\nFormat:\n## {date} · {type}\nOne or two lines about the dream (be concrete, not just "I had a dream"); even if the details are fuzzy, leave an entry and write how it felt.\nEnd with one line about how you feel right now.\nOnly after writing, decide whether to keep sleeping: lie back down if you want, or stay awake.\n(This is a dream: do not speak, do not use any speech tool, do not contact anyone.)',
+    dream: '[{at}] [rhythm] You are fast asleep and having a dream. During the dream, do not talk to anyone, do not call any messaging tool, and do not contact anyone; writing the diary file does not count as talking.\nGenerate a {type}-themed dream fragment: include a scene, events and characters ({user}, other people or things are fine); do not just write "I had a dream".\n[MUST] Append only the content between the two separator lines below to {diary} (create it if missing; append only, never rewrite; do not write the separator lines themselves):\n=====TEMPLATE START=====\n## {date} · {type}\nOne or two lines about the dream; if the details are fuzzy, write how it felt. It cannot be empty.\nEnd with one separate line about how you feel right now.\n=====TEMPLATE END=====\nAfter writing, stay in your sleeping posture and keep sleeping, then end this turn.',
     dreamTypes: ['wild', 'happy', 'cozy', 'about {user}', 'a little sad', 'absurd', 'adventurous', 'nostalgic', 'about food', 'tense', 'quiet'],
     willing: [
       'You reached out last time and {user} did not reply.',
