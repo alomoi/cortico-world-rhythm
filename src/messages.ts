@@ -31,7 +31,7 @@ export const DEFAULT_MESSAGES: RhythmMessages = {
     wake: '[{at}] [作息] 早上好，醒醒神。想动一动可以用 pet_act 的 stand 站起来，然后想做什么就做什么。',
     woken: '[{at}] [作息] 你刚才在睡觉，{user}（{by}）把你吵醒了（今夜第 {count} 次）。要不要带点起床气，你自己决定；不想理就结束这一轮。',
 dream: '[{at}] [作息] 你正在熟睡，刚做了一个【{type}】的梦。\n围绕【{type}】这个主题，自己编一个具体的小片段：在哪里、发生了什么、有谁（可以是{user}、别的人或东西）。不要只写「做了一个某某的梦」。\n先做这一步（必做，不能跳过）：立刻把这条记录**追加写入** {diary}。文件不存在就创建；只追加，不要重写整篇。\n格式（照抄结构）：\n## {date} · {type}\n一两行梦的内容（要具体，别只写「做了一个梦」）；记不清细节也要留一条，写写当时的感受也行。\n最后加一句你此刻的心情。\n写完再决定睡不睡：想继续睡就躺回去保持睡姿，想醒着就随便。\n（做梦时不能说话、不能用任何说话工具、不能联系任何人。）',
-    dreamTypes: ['天马行空的', '快乐的', '舒心的', '关于{user}的', '有点伤感的', '荒诞的', '冒险的', '怀旧的', '关于食物的', '会飞的', '安静的'],
+    dreamTypes: ['天马行空的', '快乐的', '舒心的', '关于{user}的', '有点伤感的', '荒诞的', '冒险的', '怀旧的', '关于食物的', '紧张的', '安静的'],
     willing: [
       '上次你主动搭话，{user}没有回复。',
       '你连续两次主动搭话，{user}都没有回复，你有点担心{user}。',
@@ -44,7 +44,7 @@ dream: '[{at}] [作息] 你正在熟睡，刚做了一个【{type}】的梦。\n
     wake: '[{at}] [rhythm] Morning, time to wake up. You can stand up with the pet_act motion "stand" and then do whatever you like.',
     woken: '[{at}] [rhythm] You were asleep and {user} ({by}) woke you up (wake-up #{count} tonight). Being a little grumpy about it is up to you; ignore it and end the turn if you would rather not.',
 dream: '[{at}] [rhythm] You are fast asleep and just had a {type} dream.\nInvent a concrete little scene around the {type} theme: where it happened, what happened, and who was there ({user}, someone else, or something). Do not just write "I had a dream".\nFirst, and this is mandatory: immediately append a record to {diary}. Create the file if it does not exist; append only, never rewrite the whole file.\nFormat:\n## {date} · {type}\nOne or two lines about the dream (be concrete, not just "I had a dream"); even if the details are fuzzy, leave an entry and write how it felt.\nEnd with one line about how you feel right now.\nOnly after writing, decide whether to keep sleeping: lie back down if you want, or stay awake.\n(This is a dream: do not speak, do not use any speech tool, do not contact anyone.)',
-    dreamTypes: ['wild', 'happy', 'cozy', 'about {user}', 'a little sad', 'absurd', 'adventurous', 'nostalgic', 'about food', 'flying', 'quiet'],
+    dreamTypes: ['wild', 'happy', 'cozy', 'about {user}', 'a little sad', 'absurd', 'adventurous', 'nostalgic', 'about food', 'tense', 'quiet'],
     willing: [
       'You reached out last time and {user} did not reply.',
       'You reached out twice in a row and {user} did not reply; you are a little worried about {user}.',
