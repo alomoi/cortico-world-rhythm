@@ -606,6 +606,13 @@ export class RhythmWorld implements World {
     });
   }
 
+  /**
+   * 一轮结束：把这一轮叫醒的「有没有被回应」当场结算。
+   * 这样「被无视」会立刻反映到下一次间隔；不再是等到下一次叫醒才结算、晚一格生效。
+   */
+  onTurnEnded(): void {
+    this.settleAttempt();
+  }
   /** 上下文刚交接：最近的对话可能只剩摘要，下一次叫醒可以考虑引用原话。 */
   onHandoffEnded(): void {
     this.handoffAt = Date.now();
@@ -1426,7 +1433,7 @@ export class RhythmWorld implements World {
       willingness: {
         unanswered: this.state.unanswered,
         factor: this.willingnessFactor(limits),
-        nextNudgeInMinutes: this.minutesUntilDue(limits),
+        nextNudgeInMinutes: limits.maxRounds > 0 && this.rounds >= limits.maxRounds ? null : this.minutesUntilDue(limits),
       },
       presence: this.presenceCache ? {
         state: this.presenceState(this.presenceCache.presence),
@@ -1434,7 +1441,10 @@ export class RhythmWorld implements World {
         idleSeconds: this.presenceCache.presence.idleSeconds,
       } : null,
       plan: {
-        nextNudgeAt: (() => { const due = this.dueAt(limits); return due === null ? null : new Date(due).toISOString(); })(),
+        capped: limits.maxRounds > 0 && this.rounds >= limits.maxRounds,
+        nextNudgeAt: limits.maxRounds > 0 && this.rounds >= limits.maxRounds
+          ? null
+          : (() => { const due = this.dueAt(limits); return due === null ? null : new Date(due).toISOString(); })(),
         inWindow: windowNow?.kind ?? null,
         shadow: limits.dryRun,
       },

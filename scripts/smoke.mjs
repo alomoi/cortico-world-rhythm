@@ -1719,6 +1719,40 @@ console.log('willingness: the status file exposes it:');
   await h.world.stop();
 }
 
+console.log('settlement happens at turn end, so the stretch is immediate:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 10, willingnessEnabled: true });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  check('the first nudge fires', h.pushes.length === 1);
+  tapTool(h, 'pet_say');
+  h.world.onTurnEnded();
+  check('the ignored outreach is counted at once', h.world.state.unanswered === 1, String(h.world.state.unanswered));
+  advance(14);
+  h.world.tick();
+  check('no nudge before the stretched gap', h.pushes.length === 1);
+  advance(1);
+  h.world.tick();
+  check('the next nudge comes at 1.5x', h.pushes.length === 2, String(h.pushes.length));
+  await h.world.stop();
+}
+
+console.log('status says capped instead of showing a phantom time:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ maxRounds: 3, willingnessEnabled: true });
+  await boot(h);
+  h.world.rounds = 3;
+  h.world.persist();
+  const status = JSON.parse(readFileSync(join(h.dir, 'deployment', 'data', 'rhythm', 'status.json'), 'utf8'));
+  check('plan.capped is true', status.plan?.capped === true, JSON.stringify(status.plan));
+  check('no phantom nextNudgeAt', status.plan?.nextNudgeAt === null, JSON.stringify(status.plan));
+  check('willingness countdown is null too', status.willingness?.nextNudgeInMinutes === null, JSON.stringify(status.willingness));
+  await h.world.stop();
+}
+
 Date.now = realNow;
 console.log(failures.length === 0 ? 'PASS' : `FAILED (${failures.length})`);
 process.exitCode = failures.length === 0 ? 0 : 1;
