@@ -1,9 +1,9 @@
 {
   "name": "cortico-world-rhythm",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "module",
-  "private": true,
-  "description": "Coopanion / Cortico 的作息 World：安静一段时间后叫醒 Coo，由它自己决定开不开口、用什么工具，慢慢过上自己的日子。（基于 cortico-world-selftalk 0.2.2 的 fork）",
+  "private": false,
+  "description": "Coopanion 的作息扩展：让桌宠有自己的生活节律——什么时候安静、什么时候叫醒、睡觉与做梦。fork 自 cortico-world-selftalk 0.2.2。",
   "keywords": [
     "cortico-world",
     "cortico",
@@ -11,9 +11,21 @@
     "companion",
     "self-talk",
     "proactive",
-    "daily-rhythm"
+    "daily-rhythm",
+    "coopanion",
+    "rhythm",
+    "sleep",
+    "dream"
   ],
-  "author": "qwq-awa-qnq (upstream); fork maintained locally",
+  "author": {
+    "name": "大肥鱼 (BigFatFish)"
+  },
+  "contributors": [
+    {
+      "name": "qwq-awa-qnq",
+      "url": "https://github.com/qwq-awa-qnq"
+    }
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -33,6 +45,7 @@
   "files": [
     "src",
     "describe.json",
+    "icon.png",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -47,8 +60,22 @@
     "api": 6,
     "displayName": "作息",
     "tags": [
-      "companion"
+      "companion",
+      "rhythm",
+      "sleep",
+      "dream"
     ],
-    "describe": "describe.json"
+    "describe": "describe.json",
+    "icon": "icon.png",
+    "locales": {
+      "zh": {
+        "displayName": "作息",
+        "description": "让桌宠有自己的生活节律：安静后叫醒、睡觉与醒来、做梦、搭话意愿与场景感知。只给时机和事实，怎么回应由桌宠自己决定。"
+      },
+      "en": {
+        "displayName": "Rhythm",
+        "description": "Give your desktop pet a daily rhythm: wake-ups after quiet time, sleep and mornings, dreams, talking willingness and presence facts. Timing and facts only; the pet decides how to respond."
+      }
+    }
   }
 }

@@ -1790,7 +1790,7 @@ console.log('diagnostics: off by default; on writes a shareable bundle:');
   const diagFile = join(h.dir, 'deployment', 'data', 'rhythm', 'diagnostics.json');
   check('the diagnostics file is written', existsSync(diagFile));
   const diag = existsSync(diagFile) ? JSON.parse(readFileSync(diagFile, 'utf8')) : {};
-  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8').replace(/^\uFEFF/, ''));
   check('it carries the plugin version', diag.version === pkg.version, String(diag.version));
   check('it carries the config snapshot', diag.config?.debug === true && diag.config?.quietMinutes === 15, JSON.stringify(diag.config));
   check('it carries runtime and state', typeof diag.runtime?.rounds === 'number' && typeof diag.state?.unanswered === 'number', JSON.stringify(diag.runtime));
