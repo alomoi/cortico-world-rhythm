@@ -82,7 +82,7 @@
 | `dreamChance` | 0.3 | 每夜做梦的概率 |
 | `dreamAfterMinutes` | 60 | 入睡多久后才可能做梦 |
 | `dreamMaxPerNight` | 1 | 一夜最多几次梦 |
-| `dreamDiary` | `workspace/partner/dreams.md` | 梦的小本本路径（相对部署目录）；留空不写 |
+| `dreamDiary` | `partner/dreams.md` | 提示它自己记梦的路径（相对它的工作区）；留空则不提示 |
 | `dryRun` | false | 影子模式：只算什么时候该叫、写日志与状态，不投递任何事件 |
 | `contextAware` | true | 叫醒时带「安静多久 / 它上次开口有没有被接」这些事实 |
 | `contextQuotes` | true | 上下文可能丢失时引用原话（40 字，剥掉渠道标记） |

@@ -107,8 +107,8 @@
 - 睡眠时段内**入夜掷一次骰子**（做不做 / 几点 / 什么类型），一夜最多 `dreamMaxPerNight` 次；被吵醒则取消。
 - 到点投一条 `rhythm.hint`（`meta.kind = 'dream'`），正文由 `messages.json` 的 `dream` 模板与 `dreamTypes` 词表决定，
   明确要求「别说话、别用说话工具、别联系任何人」。
-- 用 `outputTap` 抓这一轮生成的正文，回合结束时追加到梦的小本本（`dreamDiary`，默认
-  `workspace/partner/dreams.md`）；抓不到就记「只记得做过这个梦」。
+- 提示词让 **Coo 自己**把梦追加到 `dreamDiary`（默认 `partner/dreams.md`，相对它的工作区）；
+  插件不抓正文、不替它写文件。
 - 早上的「该醒了」提示补一句事实（梦的内容 + 「要不要跟主人提，由你决定」），沿用 P3 的「只给事实」原则。
 - 旧的 `messages.json` 会自动补上 `dream` / `dreamTypes`，不覆盖用户已有文案。
 ### 醒发正文：稳定模板 + 事实行 + 日期

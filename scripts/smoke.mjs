@@ -169,7 +169,7 @@ console.log('config defaults:');
   check('idle probing defaults off (no runtime compile)', d.awayIdleProbe === false);
   check('dreaming defaults off', d.dreamEnabled === false);
   check('dream chance defaults to 0.3', d.dreamChance === 0.3);
-  check('dream diary defaults into the workspace', d.dreamDiary === 'workspace/partner/dreams.md');
+  check('dream diary defaults to the workspace-relative path', d.dreamDiary === 'partner/dreams.md');
   check('speakTools defaults to the four known send tools', /pet_say/.test(d.speakTools) && /clawbridge_send/.test(d.speakTools));
   check('speakIgnore defaults empty', d.speakIgnore === '');
   check('loose speak matching defaults off', d.speakMatchAnywhere === false);
@@ -1483,7 +1483,7 @@ console.log('presence: probe mode follows the setting:');
 }
 
 // ── 32. 做梦 ──────────────────────────────────────────────────────────────
-console.log('dream: one nightly plan, captured and written to the diary:');
+console.log('dream: one nightly plan, the bot is asked to write the diary:');
 {
   at('2026-11-02T21:50:00+08:00');
   const h = harness({
@@ -1507,26 +1507,19 @@ console.log('dream: one nightly plan, captured and written to the diary:');
   advance(300); // 03:00
   h.world.tick();
   const dreamHint = h.hints.find((x) => x.spec.meta.kind === 'dream');
+  const dreamText = String(dreamHint?.spec.render());
   check('the dream hint is sent', Boolean(dreamHint));
-  check('it carries a dream type', String(dreamHint?.spec.render()).includes('【天马行空的】'), String(dreamHint?.spec.render()));
+  check('it carries a dream type', dreamText.includes('【天马行空的】'), dreamText);
+  check('it points at the diary path', dreamText.includes('partner/dreams.md'), dreamText);
   check('the plan is consumed', h.world.state.sleep.dreamPlan === null);
-
-  const tap = h.world.outputTap();
-  tap.onEvent({ type: 'response.output_text.delta', delta: '梦见在海边捡到' });
-  tap.onEvent({ type: 'response.output_text.delta', delta: '一颗会发光的贝壳。' });
-  h.world.onTurnEnded();
-  check('the dream text is captured', h.world.state.sleep.dreams[0]?.text.includes('会发光的贝壳'), JSON.stringify(h.world.state.sleep.dreams));
-
-  const diary = join(h.dir, 'deployment', 'workspace', 'partner', 'dreams.md');
-  check('the diary file exists', existsSync(diary));
-  const md = existsSync(diary) ? readFileSync(diary, 'utf8') : '';
-  check('the diary holds the dream', md.includes('会发光的贝壳') && md.includes('天马行空的'), md);
+  check('the dream record exists without captured text', h.world.state.sleep.dreams.length === 1 && h.world.state.sleep.dreams[0].text === '');
 
   at('2026-11-03T08:00:00+08:00');
   h.world.tick();
   const wake = h.hints.filter((x) => x.spec.meta.kind === 'wake').at(-1);
   const wakeText = String(wake?.spec.render());
   check('the morning hint mentions the dream', wakeText.includes('你昨晚做了一个【天马行空的】的梦'), wakeText);
+  check('and points at the diary', wakeText.includes('记在 partner/dreams.md 里'), wakeText);
   check('but sharing stays the bot decision', wakeText.includes('要不要跟主人提，由你决定'), wakeText);
   await h.world.stop();
 }
@@ -1627,25 +1620,6 @@ console.log('the opening carries the date:');
   const hint = String(h.hints[0]?.spec.render());
   check('hints show the month and day', /11-02/.test(hint), hint);
   check('and the time', hint.includes('22:00'), hint);
-  await h.world.stop();
-}
-
-console.log('dream: reasoning is the fallback when no text is written:');
-{
-  at('2026-11-02T21:50:00+08:00');
-  const h = harness({ sleepWindow: '22:00-08:00', dreamEnabled: true, dreamChance: 1, dreamAfterMinutes: 60 });
-  let n = 0;
-  const seq = [0.1, 0.5, 0];
-  h.world.opts.random = () => seq[Math.min(n++, seq.length - 1)];
-  await boot(h);
-  advance(10);
-  h.world.tick();
-  advance(300);
-  h.world.tick();
-  const tap = h.world.outputTap();
-  tap.onEvent({ type: 'response.reasoning_summary_text.delta', delta: '梦见自己变成一条会飞的鱼。' });
-  h.world.onTurnEnded();
-  check('the reasoning text is used when the model wrote no text', h.world.state.sleep.dreams[0]?.text.includes('会飞的鱼'), JSON.stringify(h.world.state.sleep.dreams[0]));
   await h.world.stop();
 }
 

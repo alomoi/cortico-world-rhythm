@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 作息（Rhythm）World 的配置段与 WebUI 配置组。
  *
  * `worlds.rhythm` 是组装层给出的活引用：WebUI 在「模块」页改值时就地写进这个对象，
@@ -79,7 +79,7 @@ export interface RhythmConfigSection extends WorldSection {
   dreamAfterMinutes: number;
   /** 一夜最多几次梦。 */
   dreamMaxPerNight: number;
-  /** 梦的小本本路径（相对部署目录）；留空不写。 */
+  /** 梦的小本本路径（相对 Coo 的工作区，写进提示词让它自己记）；留空则不提示。 */
   dreamDiary: string;
   /**
    * 只用桌宠与控制台的旧白名单判断「有人回来了」。
@@ -128,7 +128,7 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   dreamChance: 0.3,
   dreamAfterMinutes: 60,
   dreamMaxPerNight: 1,
-  dreamDiary: 'workspace/partner/dreams.md',
+  dreamDiary: 'partner/dreams.md',
   knownChannelsOnly: false,
   activityIgnore: '',
   onlyWhenIdle: true,

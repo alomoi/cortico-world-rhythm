@@ -31,8 +31,8 @@
  * 每个间隔（第一次叫醒与每次再次叫醒）各自乘以一次随机倍数（jitter），让节奏不机械。
  * 叫醒事件在投递时才渲染（pushDeferred）：如果排队期间使用者回来了，这一条作废。
  */
-import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
+import { join } from 'node:path';
 import type { EventEnvelope, OutputTap, RunPhase, World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
 import type { Language } from 'cortico/core/language.ts';
 import { shortTime } from 'cortico/core/util.ts';
@@ -191,8 +191,6 @@ export class RhythmWorld implements World {
   private nudgePending = false;
   /** 当前这次「探测 + 叫醒」的 Promise（测试等待用）。 */
   private nudgePromise: Promise<void> | null = null;
-  /** 正在做梦的那一轮：抓它的正文，回合结束时写进小本本。 */
-  private dreamTurn: { at: number; text: string[]; reasoning: string[] } | null = null;
   /** 文案文件的损坏只报一次，别每次提示都刷屏。 */
   private messagesWarned = false;
   /**
@@ -353,18 +351,6 @@ export class RhythmWorld implements World {
       arguments?: string;
       delta?: string;
     };
-
-    // 做梦那一轮：把模型写出来的正文攒起来；没有正文时用推理摘要兜底。
-    if (this.dreamTurn && typeof e.delta === 'string' && e.delta) {
-      if (e.type === 'response.output_text.delta') {
-        if (this.dreamTurn.text.length < 600) this.dreamTurn.text.push(e.delta);
-        return;
-      }
-      if (e.type === 'response.reasoning.delta' || e.type === 'response.reasoning_summary_text.delta') {
-        if (this.dreamTurn.reasoning.length < 600) this.dreamTurn.reasoning.push(e.delta);
-        return;
-      }
-    }
 
     if (e.type === 'response.output_item.added') {
       const item = e.item;
@@ -928,16 +914,11 @@ export class RhythmWorld implements World {
         const extra: string[] = [];
         const dreams = this.state.sleep.dreams;
         const language = this.opts.language();
+        const diary = this.limits().dreamDiary;
         for (const dream of dreams.slice(-3)) {
-          if (dream.text) {
-            extra.push(language === 'zh'
-              ? `你昨晚做了一个【${dream.type}】的梦，梦到：「${dream.text}」`
-              : `You dreamed a ${dream.type} dream last night: "${dream.text}"`);
-          } else {
-            extra.push(language === 'zh'
-              ? `你昨晚做了一个【${dream.type}】的梦，细节你自己记得`
-              : `You dreamed a ${dream.type} dream last night; the details are yours to remember`);
-          }
+          extra.push(language === 'zh'
+            ? `你昨晚做了一个【${dream.type}】的梦${diary ? `，记在 ${diary} 里` : ''}。`
+            : `You dreamed a ${dream.type} dream last night${diary ? `, recorded in ${diary}` : ''}.`);
         }
         if (extra.length) {
           extra.push(language === 'zh' ? '要不要跟主人提，由你决定。' : 'Whether to tell the person is up to you.');
@@ -1006,55 +987,11 @@ export class RhythmWorld implements World {
     if (limits.onlyWhenIdle && this.phaseState !== 'idle') return;
     this.state.sleep.dreamPlan = null;
     this.state.sleep.dreams.push({ at: now, type: plan.type, text: '' });
-    this.dreamTurn = { at: now, text: [], reasoning: [] };
-    this.sendHint('dream', now, { type: plan.type });
+    this.sendHint('dream', now, { type: plan.type, diary: limits.dreamDiary });
     this.host?.log.info('作息:做梦', { type: plan.type, phase: this.phaseState });
     this.persist();
   }
 
-  /** 梦的时间戳：`2026-11-03 周二 03:12`。 */
-  private dreamStamp(at: number): string {
-    const timezone = this.opts.timezone || undefined;
-    const day = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date(at));
-    const weekday = new Intl.DateTimeFormat('zh-CN', { timeZone: timezone, weekday: 'short' }).format(new Date(at));
-    return `${day} ${weekday} ${shortTime(this.opts.timezone, new Date(at))}`;
-  }
-
-  /** 把一场梦追加进小本本；只在配置了路径时写，失败只记日志。 */
-  private appendDreamDiary(dream: { at: number; type: string; text: string }): void {
-    const diary = this.limits().dreamDiary;
-    if (!diary) return;
-    const file = join(this.opts.botDir, diary);
-    const body = dream.text || '（没记下细节，只记得做过这个梦）';
-    const header = existsSync(file) ? '' : '# 梦的小本本\n\n';
-    const night = this.state.sleep;
-    const entry = `${header}## ${this.dreamStamp(dream.at)} · ${dream.type}\n> ${body}\n\n（第 ${night.dreams.length} 次梦 · 被吵醒 ${night.wokeCount} 次）\n\n`;
-    try {
-      mkdirSync(dirname(file), { recursive: true });
-      appendFileSync(file, entry, 'utf8');
-    } catch (error) {
-      this.host?.log.warn('作息:梦的小本本写不进去', { error });
-    }
-  }
-
-  /** 做梦那一轮结束：把抓到的正文写进小本本。 */
-  onTurnEnded(): void {
-    const turn = this.dreamTurn;
-    this.dreamTurn = null;
-    if (!turn) return;
-    const spoken = sanitizeQuote(turn.text.join(''));
-    const thought = sanitizeQuote(turn.reasoning.join(''));
-    const text = spoken || thought;
-    const dream = this.state.sleep.dreams[this.state.sleep.dreams.length - 1];
-    if (dream) {
-      dream.text = text;
-      this.appendDreamDiary(dream);
-      this.host?.log.info('作息:梦已记录', { type: dream.type, chars: text.length, source: spoken ? 'text' : (thought ? 'reasoning' : 'none') });
-    }
-    this.persist();
-  }
   /**
    * 睡眠时段内数「被吵醒」：同一场打扰按 `wakeGapMinutes` 合并；
    * 每计一次就落一条归档事件，并按需投一条 piggyback 的起床气提示。
@@ -1139,7 +1076,7 @@ export class RhythmWorld implements World {
   private sendHint(
     kind: HintKind,
     now: number,
-    vars: { by?: string; count?: number; type?: string } = {},
+    vars: { by?: string; count?: number; type?: string; diary?: string } = {},
     extraLines: readonly string[] = [],
   ): void {
     const host = this.host;
@@ -1151,6 +1088,7 @@ export class RhythmWorld implements World {
       by: vars.by ?? '',
       count: vars.count === undefined ? '' : String(vars.count),
       type: vars.type ?? '',
+      diary: vars.diary ?? '',
     });
     const text = extraLines.length ? `${base}\n${extraLines.join('\n')}` : base;
     const staleAfterMs = limits.wakeHintSeconds * 1000;
