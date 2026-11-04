@@ -1630,6 +1630,25 @@ console.log('the opening carries the date:');
   await h.world.stop();
 }
 
+console.log('dream: reasoning is the fallback when no text is written:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00', dreamEnabled: true, dreamChance: 1, dreamAfterMinutes: 60 });
+  let n = 0;
+  const seq = [0.1, 0.5, 0];
+  h.world.opts.random = () => seq[Math.min(n++, seq.length - 1)];
+  await boot(h);
+  advance(10);
+  h.world.tick();
+  advance(300);
+  h.world.tick();
+  const tap = h.world.outputTap();
+  tap.onEvent({ type: 'response.reasoning_summary_text.delta', delta: '梦见自己变成一条会飞的鱼。' });
+  h.world.onTurnEnded();
+  check('the reasoning text is used when the model wrote no text', h.world.state.sleep.dreams[0]?.text.includes('会飞的鱼'), JSON.stringify(h.world.state.sleep.dreams[0]));
+  await h.world.stop();
+}
+
 Date.now = realNow;
 console.log(failures.length === 0 ? 'PASS' : `FAILED (${failures.length})`);
 process.exitCode = failures.length === 0 ? 0 : 1;

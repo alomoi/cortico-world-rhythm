@@ -27,14 +27,14 @@ export const DEFAULT_MESSAGES: RhythmMessages = {
     sleep: '[{at}] [作息] 到睡觉时间了。想睡的话可以用 pet_act 的 sleep 动作躺下（它会保持到你下一次动作）；不想睡就做自己的事，或者结束这一轮。',
     wake: '[{at}] [作息] 早上好，醒醒神。想动一动可以用 pet_act 的 stand 站起来，然后想做什么就做什么。',
     woken: '[{at}] [作息] 你刚才在睡觉，被 {by} 吵醒了（今夜第 {count} 次）。要不要带点起床气，你自己决定；不想理就结束这一轮。',
-    dream: '[{at}] [作息] 你正在熟睡，做了一个【{type}】的梦。梦的内容由你自己想，不用告诉任何人；想继续睡的话可以用 pet_act 的 sleep 保持睡姿。（这是梦，别说话、别用任何说话工具、别联系任何人。）',
+    dream: '[{at}] [作息] 你正在熟睡，做了一个【{type}】的梦。把这场梦用一两句话写下来——这只是写给自己看的记录，不会发出去；想继续睡可以用 pet_act 的 sleep 保持睡姿。（别说话、别用任何说话工具、别联系任何人。）',
     dreamTypes: ['天马行空的', '快乐的', '舒心的', '关于主人的', '有点伤感的'],
   },
   en: {
     sleep: '[{at}] [rhythm] It is bedtime. If you feel like it, you can lie down with the pet_act motion "sleep" (it is held until your next action); if not, do your own thing or end this turn.',
     wake: '[{at}] [rhythm] Morning, time to wake up. You can stand up with the pet_act motion "stand" and then do whatever you like.',
     woken: '[{at}] [rhythm] You were asleep and {by} woke you up (wake-up #{count} tonight). Being a little grumpy about it is up to you; ignore it and end the turn if you would rather not.',
-    dream: '[{at}] [rhythm] You are fast asleep and dreaming a {type} dream. The dream is yours to invent; you do not have to tell anyone. If you want to keep sleeping, you can stay in the pet_act motion sleep. (This is a dream: do not speak, do not use any speech tool, do not contact anyone.)',
+    dream: '[{at}] [rhythm] You are fast asleep and dreaming a {type} dream. Write the dream down in one or two sentences - it is a private note to yourself and is not sent anywhere. If you want to keep sleeping, stay in the pet_act motion sleep. (This is a dream: do not speak, do not use any speech tool, do not contact anyone.)',
     dreamTypes: ['wild', 'happy', 'cozy', 'about the person', 'a little sad'],
   },
 };

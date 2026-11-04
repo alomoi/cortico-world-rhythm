@@ -192,7 +192,7 @@ export class RhythmWorld implements World {
   /** 当前这次「探测 + 叫醒」的 Promise（测试等待用）。 */
   private nudgePromise: Promise<void> | null = null;
   /** 正在做梦的那一轮：抓它的正文，回合结束时写进小本本。 */
-  private dreamTurn: { at: number; deltas: string[] } | null = null;
+  private dreamTurn: { at: number; text: string[]; reasoning: string[] } | null = null;
   /** 文案文件的损坏只报一次，别每次提示都刷屏。 */
   private messagesWarned = false;
   /**
@@ -354,12 +354,16 @@ export class RhythmWorld implements World {
       delta?: string;
     };
 
-    // 做梦那一轮：把模型写出来的正文攒起来，回合结束时写进小本本
-    if (this.dreamTurn && e.type === 'response.output_text.delta') {
-      if (typeof e.delta === 'string' && e.delta) {
-        if (this.dreamTurn.deltas.length < 600) this.dreamTurn.deltas.push(e.delta);
+    // 做梦那一轮：把模型写出来的正文攒起来；没有正文时用推理摘要兜底。
+    if (this.dreamTurn && typeof e.delta === 'string' && e.delta) {
+      if (e.type === 'response.output_text.delta') {
+        if (this.dreamTurn.text.length < 600) this.dreamTurn.text.push(e.delta);
+        return;
       }
-      return;
+      if (e.type === 'response.reasoning.delta' || e.type === 'response.reasoning_summary_text.delta') {
+        if (this.dreamTurn.reasoning.length < 600) this.dreamTurn.reasoning.push(e.delta);
+        return;
+      }
     }
 
     if (e.type === 'response.output_item.added') {
@@ -1002,7 +1006,7 @@ export class RhythmWorld implements World {
     if (limits.onlyWhenIdle && this.phaseState !== 'idle') return;
     this.state.sleep.dreamPlan = null;
     this.state.sleep.dreams.push({ at: now, type: plan.type, text: '' });
-    this.dreamTurn = { at: now, deltas: [] };
+    this.dreamTurn = { at: now, text: [], reasoning: [] };
     this.sendHint('dream', now, { type: plan.type });
     this.host?.log.info('作息:做梦', { type: plan.type, phase: this.phaseState });
     this.persist();
@@ -1040,12 +1044,14 @@ export class RhythmWorld implements World {
     const turn = this.dreamTurn;
     this.dreamTurn = null;
     if (!turn) return;
-    const text = sanitizeQuote(turn.deltas.join(''));
+    const spoken = sanitizeQuote(turn.text.join(''));
+    const thought = sanitizeQuote(turn.reasoning.join(''));
+    const text = spoken || thought;
     const dream = this.state.sleep.dreams[this.state.sleep.dreams.length - 1];
     if (dream) {
       dream.text = text;
       this.appendDreamDiary(dream);
-      this.host?.log.info('作息:梦已记录', { type: dream.type, chars: text.length });
+      this.host?.log.info('作息:梦已记录', { type: dream.type, chars: text.length, source: spoken ? 'text' : (thought ? 'reasoning' : 'none') });
     }
     this.persist();
   }
