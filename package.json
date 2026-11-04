@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-rhythm",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "private": true,
   "description": "Coopanion / Cortico 的作息 World：安静一段时间后叫醒 Coo，由它自己决定开不开口、用什么工具，慢慢过上自己的日子。（基于 cortico-world-selftalk 0.2.2 的 fork）",

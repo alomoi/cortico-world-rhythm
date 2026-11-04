@@ -1703,7 +1703,7 @@ console.log('willingness: a night halves it (never below 1):');
 
 console.log('willingness: four emotional levels with the owner name:');
 {
-  const expected = ['上次你主动搭话，主人没有回复。', '你有点担心主人', '你有些失落', '你有些落寞'];
+  const expected = ['上次你主动搭话，主人没有回复。', '你有点担心主人', '你有点寂寞', '你有些失落'];
   for (let level = 1; level <= 4; level += 1) {
     at('2026-11-02T09:00:00+08:00');
     const h = harness({ repeatMinutes: 10, willingnessEnabled: true });

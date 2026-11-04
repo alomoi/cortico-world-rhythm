@@ -435,7 +435,7 @@ export function rhythmConfigGroups(language: Language): ConfigGroup[] {
     ]),
     group(`${owner}:advanced`, t.configAdvancedTitle, t.configAdvancedDescription, [
       'verifySpeakReceipts', 'dryRun', 'contextAware', 'contextQuotes', 'contextStaleMinutes',
-      'speakTools', 'speakIgnore', 'speakMatchAnywhere', 'channelAliases', 'debug',
+      'speakTools', 'speakIgnore', 'speakMatchAnywhere', 'channelAliases', 'dryRun', 'debug',
     ]),
   ];
 }

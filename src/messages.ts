@@ -35,8 +35,8 @@ dream: '[{at}] [作息] 你正在熟睡，刚做了一个【{type}】的梦。\n
     willing: [
       '上次你主动搭话，{user}没有回复。',
       '你连续两次主动搭话，{user}都没有回复，你有点担心{user}。',
-      '你连续三次主动搭话，{user}都没有回复，你有些失落。',
-      '你连续好多次主动搭话，{user}都没有回复，你有些落寞。',
+      '你连续三次主动搭话，{user}都没有回复，你有点寂寞。',
+      '你连续好多次主动搭话，{user}都没有回复，你有些失落。',
     ],
   },
   en: {
@@ -48,8 +48,8 @@ dream: '[{at}] [rhythm] You are fast asleep and just had a {type} dream.\nInvent
     willing: [
       'You reached out last time and {user} did not reply.',
       'You reached out twice in a row and {user} did not reply; you are a little worried about {user}.',
-      'You reached out three times in a row and {user} did not reply; you feel a bit down.',
-      'You have reached out many times and {user} did not reply; you feel a little lonely.',
+      'You reached out three times in a row and {user} did not reply; you feel a little lonely.',
+      'You have reached out many times and {user} did not reply; you feel a bit down.',
     ],
   },
 };
