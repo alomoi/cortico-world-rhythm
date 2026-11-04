@@ -421,6 +421,17 @@ export class RhythmWorld implements World {
     return false;
   }
 
+  /** 小本本标题用的完整日期：`2026-11-04 周三 04:01`（英文 `2026-11-04 04:01`）。 */
+  private fullStamp(at: number): string {
+    const timezone = this.opts.timezone || undefined;
+    const day = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(at));
+    const time = shortTime(this.opts.timezone, new Date(at));
+    if (this.opts.language() === 'en') return `${day} ${time}`;
+    const weekday = new Intl.DateTimeFormat('zh-CN', { timeZone: timezone, weekday: 'short' }).format(new Date(at));
+    return `${day} ${weekday} ${time}`;
+  }
   /** 给模型看的时间戳：`11-03 周二 14:05`（英文 `11-03 14:05`）。跨日时不会只剩一个孤零零的时刻。 */
   private stamp(at: number): string {
     const timezone = this.opts.timezone || undefined;
@@ -1026,7 +1037,7 @@ export class RhythmWorld implements World {
     if (limits.onlyWhenIdle && this.phaseState !== 'idle') return;
     this.state.sleep.dreamPlan = null;
     this.state.sleep.dreams.push({ at: now, type: plan.type, text: '' });
-    this.sendHint('dream', now, { type: plan.type, diary: limits.dreamDiary });
+    this.sendHint('dream', now, { type: plan.type, diary: limits.dreamDiary, date: this.fullStamp(now) });
     this.host?.log.info('作息:做梦', { type: plan.type, phase: this.phaseState });
     this.persist();
   }
@@ -1115,7 +1126,7 @@ export class RhythmWorld implements World {
   private sendHint(
     kind: HintKind,
     now: number,
-    vars: { by?: string; count?: number; type?: string; diary?: string; user?: string } = {},
+    vars: { by?: string; count?: number; type?: string; diary?: string; user?: string; date?: string } = {},
     extraLines: readonly string[] = [],
   ): void {
     const host = this.host;
@@ -1129,6 +1140,7 @@ export class RhythmWorld implements World {
       type: vars.type ?? '',
       diary: vars.diary ?? '',
       user: vars.user ?? (this.opts.ownerName() || (this.opts.language() === 'zh' ? 'ta' : 'the person')),
+      date: vars.date ?? '',
     });
     const text = extraLines.length ? `${base}\n${extraLines.join('\n')}` : base;
     const staleAfterMs = limits.wakeHintSeconds * 1000;

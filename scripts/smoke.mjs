@@ -1514,6 +1514,9 @@ console.log('dream: one nightly plan, the bot is asked to write the diary:');
   check('the dream hint is sent', Boolean(dreamHint));
   check('it carries a dream type', dreamText.includes('【天马行空的】'), dreamText);
   check('it points at the diary path', dreamText.includes('partner/dreams.md'), dreamText);
+  check('recording is mandatory and appended', dreamText.includes('必做') && dreamText.includes('追加写入'), dreamText);
+  check('the heading carries the full date', /## 2026-11-03 周[一二三四五六日] 03:00/.test(dreamText), dreamText);
+  check('no tool name is hardcoded', !dreamText.includes('pet_act'), dreamText);
   check('the plan is consumed', h.world.state.sleep.dreamPlan === null);
   check('the dream record exists without captured text', h.world.state.sleep.dreams.length === 1 && h.world.state.sleep.dreams[0].text === '');
 
