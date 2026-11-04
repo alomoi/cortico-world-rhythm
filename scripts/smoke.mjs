@@ -156,6 +156,7 @@ console.log('config defaults:');
   check('willingness is off by default', d.willingnessEnabled === false);
   check('willingness cap defaults to 8 hours', d.willingnessMaxMinutes === 480);
   check('willingness hint defaults on', d.willingnessHint === true);
+  check('diagnostics are off by default', d.debug === false);
   check('skipChance defaults to 0', d.skipChance === 0);
   check('sleepHint defaults on', d.sleepHint === true);
   check('wakeHint defaults on', d.wakeHint === true);
@@ -1750,6 +1751,40 @@ console.log('status says capped instead of showing a phantom time:');
   check('plan.capped is true', status.plan?.capped === true, JSON.stringify(status.plan));
   check('no phantom nextNudgeAt', status.plan?.nextNudgeAt === null, JSON.stringify(status.plan));
   check('willingness countdown is null too', status.willingness?.nextNudgeInMinutes === null, JSON.stringify(status.willingness));
+  await h.world.stop();
+}
+
+console.log('diagnostics: off by default; on writes a shareable bundle:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const off = harness();
+  await boot(off);
+  advance(15);
+  off.world.tick();
+  check('no diagnostics file when off', !existsSync(join(off.dir, 'deployment', 'data', 'rhythm', 'diagnostics.json')));
+  check('no debug log when off', !existsSync(join(off.dir, 'deployment', 'data', 'rhythm', 'debug.log')));
+  await off.world.stop();
+
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ debug: true });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  const diagFile = join(h.dir, 'deployment', 'data', 'rhythm', 'diagnostics.json');
+  check('the diagnostics file is written', existsSync(diagFile));
+  const diag = existsSync(diagFile) ? JSON.parse(readFileSync(diagFile, 'utf8')) : {};
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  check('it carries the plugin version', diag.version === pkg.version, String(diag.version));
+  check('it carries the config snapshot', diag.config?.debug === true && diag.config?.quietMinutes === 15, JSON.stringify(diag.config));
+  check('it carries runtime and state', typeof diag.runtime?.rounds === 'number' && typeof diag.state?.unanswered === 'number', JSON.stringify(diag.runtime));
+  check('it carries a decision log', Array.isArray(diag.log) && diag.log.length > 0, JSON.stringify(diag.log?.slice(-3)));
+  const debugFile = join(h.dir, 'deployment', 'data', 'rhythm', 'debug.log');
+  check('the debug log exists', existsSync(debugFile));
+  const debugText = existsSync(debugFile) ? readFileSync(debugFile, 'utf8') : '';
+  check('the debug log has decisions', debugText.includes('叫醒'), debugText);
+  const status = JSON.parse(readFileSync(join(h.dir, 'deployment', 'data', 'rhythm', 'status.json'), 'utf8'));
+  check('status exposes the version', status.version === pkg.version, String(status.version));
+  check('status exposes debug', status.debug === true);
   await h.world.stop();
 }
 

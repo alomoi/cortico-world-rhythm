@@ -51,6 +51,8 @@ export interface RhythmUi {
   willingnessMaxDescription: string;
   willingnessHintTitle: string;
   willingnessHintDescription: string;
+  debugTitle: string;
+  debugDescription: string;
   sleepHintTitle: string;
   sleepHintDescription: string;
   wakeHintTitle: string;
@@ -136,6 +138,8 @@ const zh: RhythmUi = {
   willingnessEnabledDescription: '它主动搭话没人接时，再次叫醒的间隔按 1.5 倍递减；你一对话就立刻恢复，睡醒后减半。默认关。',
   willingnessMaxTitle: '递减封顶（分钟）',
   willingnessMaxDescription: '间隔最多拉长到这么多分钟（60–720，默认 480 = 8 小时）。',
+  debugTitle: '诊断模式（排障用）',
+  debugDescription: '打开后在 data/rhythm/ 下生成 diagnostics.json 和 debug.log，可直接发给开发者排查问题；不含聊天正文。默认关。',
   willingnessHintTitle: '递减期间加一句情绪提示',
   willingnessHintDescription: '在叫醒正文里按未回应次数加一句「担心/失落/落寞」的提示；只给信息，怎么应对由它决定。',
   sleepHintTitle: '睡眠时段给 Coo 提示',
@@ -237,6 +241,8 @@ const en: RhythmUi = {
   willingnessEnabledDescription: 'When its outreach goes unanswered, later wake-ups come 1.5x further apart; talking to it resets immediately, and a night of sleep halves the count. Off by default.',
   willingnessMaxTitle: 'Slow-down cap (minutes)',
   willingnessMaxDescription: 'The longest gap the slow-down can reach (60-720, default 480 = 8h).',
+  debugTitle: 'Diagnostics mode (for troubleshooting)',
+  debugDescription: 'Writes diagnostics.json and debug.log under data/rhythm/ for sharing with the developer. No chat text is included. Off by default.',
   willingnessHintTitle: 'Add a feeling line while slowing down',
   willingnessHintDescription: 'Adds a short worried/lonely line to the prompt based on unanswered count. Information only; how to react is the bot decision.',
   sleepHintTitle: 'Sleep messages to the bot',

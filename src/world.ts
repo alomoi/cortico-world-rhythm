@@ -41,6 +41,7 @@ import { fillTemplate, loadMessages, messagesPath, type HintKind } from './messa
 import { buildThread, sanitizeQuote } from './context.ts';
 import { nudgeText, type ModelLanguage, type NudgeQuote } from './model-text.ts';
 import { detectPresence, UNKNOWN_PRESENCE, type Presence } from './presence.ts';
+import { appendDebugLine, pluginVersion, writeDiagnostics } from './diagnostics.ts';
 import { loadState, localDayKey, saveState, stateFilePath, writeJsonAtomic, type RhythmState } from './state.ts';
 import { uiText, type LampInfo } from './ui-text.ts';
 import { formatClock, matchWindow, minutesOfDay, parseWindowList, type ClockWindow } from './windows.ts';
@@ -195,6 +196,10 @@ export class RhythmWorld implements World {
   private nudgePromise: Promise<void> | null = null;
   /** 文案文件的损坏只报一次，别每次提示都刷屏。 */
   private messagesWarned = false;
+  /** 诊断模式下的决策日志（最后 200 条，写进 diagnostics.json）。 */
+  private debugLines: string[] = [];
+  private lastDiagAt = 0;
+  private messageProblems: string[] = [];
   /**
    * 从事件库学到的聊天渠道前缀（`qq.message` → `qq`）。
    * 有插件推过用户消息，它的说话工具（如 `qq_send`）就能被自动认出来，不用人工登记。
@@ -323,6 +328,7 @@ export class RhythmWorld implements World {
     // 启动即写一次状态与公开状态：这样 status.json 不用等第一次叫醒才出现。
     this.persist();
     this.rollJitter();
+    this.diag('启动', { quietMinutes: limits.quietMinutes, rounds: this.rounds, inWindow: this.lastWindow });
     this.timer = setInterval(() => this.tick(), CHECK_EVERY_MS);
   }
 
@@ -569,6 +575,7 @@ export class RhythmWorld implements World {
     const attempt = this.attempt;
     this.attempt = null;
     if (!attempt) return;
+    this.diag('结算开始', { spoke: attempt.spoke, replied: attempt.replied, calls: attempt.calls.length, unanswered: this.state.unanswered });
     const answered = this.latestPersonActivity().at > attempt.at;
     if (answered) {
       this.host?.log.debug('作息:有人回应了，不再计数');
@@ -599,6 +606,7 @@ export class RhythmWorld implements World {
       return;
     }
     this.state.unanswered += 1;
+    this.diag('结算:未回应', { unanswered: this.state.unanswered, factor: this.willingnessFactor(this.limits()) });
     this.host?.log.info('作息:搭话没人理', {
       unanswered: this.state.unanswered,
       factor: this.willingnessFactor(this.limits()),
@@ -647,6 +655,7 @@ export class RhythmWorld implements World {
       willingnessEnabled: cfg.willingnessEnabled === true,
       willingnessMaxMinutes: Math.floor(numberIn(cfg.willingnessMaxMinutes, 480, 60, 720)),
       willingnessHint: cfg.willingnessHint !== false,
+      debug: cfg.debug === true,
       skipChance: numberIn(cfg.skipChance, 0, 0, 1),
       sleepHint: cfg.sleepHint !== false,
       wakeHint: cfg.wakeHint !== false,
@@ -807,6 +816,7 @@ export class RhythmWorld implements World {
 
   private applyActivityWillingness(type: string, meta?: Record<string, unknown>): void {
     const effect = this.activityEffect(type, meta);
+    this.diag('互动', { type, effect, unanswered: this.state.unanswered });
     if (effect === 'conversation') {
       if (this.state.unanswered !== 0) {
         this.host?.log.info('作息:对话，搭话意愿恢复', { from: this.state.unanswered, type });
@@ -851,6 +861,10 @@ export class RhythmWorld implements World {
     this.rollDay(now);
 
     const limits = this.limits();
+    if (limits.debug && now - this.lastDiagAt >= 60_000) {
+      this.lastDiagAt = now;
+      this.writeDiagnostics();
+    }
     if (limits.quietMinutes <= 0) return;
 
     this.refreshWindows();
@@ -1044,6 +1058,7 @@ export class RhythmWorld implements World {
     if (limits.onlyWhenIdle && this.phaseState !== 'idle') return;
     this.state.sleep.dreamPlan = null;
     this.state.sleep.dreams.push({ at: now, type: plan.type, text: '' });
+    this.diag('做梦', { type: plan.type });
     this.sendHint('dream', now, { type: plan.type, diary: limits.dreamDiary, date: this.fullStamp(now) });
     this.host?.log.info('作息:做梦', { type: plan.type, phase: this.phaseState });
     this.persist();
@@ -1119,6 +1134,7 @@ export class RhythmWorld implements World {
 
   private warnMessageProblems(): void {
     const { problems } = loadMessages(messagesPath(this.opts.dataDir));
+    this.messageProblems = problems;
     if (problems.length) {
       this.messagesWarned = true;
       this.host?.log.warn('作息:提示文案文件有问题，先用内置默认', { problems });
@@ -1151,6 +1167,7 @@ export class RhythmWorld implements World {
     });
     const text = extraLines.length ? `${base}\n${extraLines.join('\n')}` : base;
     const staleAfterMs = limits.wakeHintSeconds * 1000;
+    this.diag('提示', { kind });
     host.log.info('作息:睡眠提示', { kind, phase: this.phaseState });
     host.pushDeferred({
       type: HINT_TYPE,
@@ -1197,6 +1214,7 @@ export class RhythmWorld implements World {
         .catch(() => UNKNOWN_PRESENCE())
         .then((presence) => {
           this.presenceCache = { at: Date.now(), presence };
+          this.diag('探测', { locked: presence.locked, idleSeconds: presence.idleSeconds });
           this.presencePending = null;
           this.host?.log.debug('作息:探测主人状态', {
             locked: presence.locked,
@@ -1257,6 +1275,7 @@ export class RhythmWorld implements World {
     // 下一次「再次叫醒」间隔的随机倍数现在掷
     this.rollJitter();
     const quietMinutes = Math.max(1, Math.round((now - this.lastActivitySeen) / 60_000));
+    this.diag('叫醒', { round: this.rounds, factor: this.willingnessFactor(limits), quietMinutes, unanswered: this.state.unanswered });
     host.log.info('作息:叫醒 Coo', {
       round: this.rounds,
       again,
@@ -1408,8 +1427,84 @@ export class RhythmWorld implements World {
     });
     if (error) this.host?.log.warn('作息:状态写不进去', { error });
     this.writeStatus();
+    if (this.limits().debug) this.writeDiagnostics();
   }
 
+  /** 诊断日志：只在 `debug` 打开时写；不进上下文、不影响调度。 */
+  private diag(message: string, data?: Record<string, unknown>): void {
+    if (!this.limits().debug) return;
+    const line = `${new Date().toISOString()} ${message}${data ? ` ${JSON.stringify(data)}` : ''}`;
+    this.debugLines.push(line);
+    if (this.debugLines.length > 200) this.debugLines.shift();
+    appendDebugLine(this.opts.dataDir, line);
+  }
+
+  /** 写一份可直接发给开发者的排障快照；不含聊天正文。 */
+  private writeDiagnostics(): void {
+    if (!this.opts.dataDir) return;
+    const limits = this.limits();
+    const now = Date.now();
+    const windowNow = this.currentWindow(now);
+    const { error } = writeDiagnostics(this.opts.dataDir, {
+      version: pluginVersion(),
+      generatedAt: new Date(now).toISOString(),
+      platform: { os: process.platform, arch: process.arch, node: process.version },
+      timezone: this.opts.timezone,
+      config: {
+        quietMinutes: limits.quietMinutes,
+        repeatMinutes: limits.repeatMinutes,
+        maxRounds: limits.maxRounds,
+        jitter: limits.jitter,
+        sleepWindow: String(this.opts.cfg.sleepWindow ?? ''),
+        restWindows: String(this.opts.cfg.restWindows ?? ''),
+        dailyCap: limits.dailyCap,
+        sleepHint: limits.sleepHint,
+        wakeHint: limits.wakeHint,
+        wakeGapMinutes: limits.wakeGapMinutes,
+        wakeHintSeconds: limits.wakeHintSeconds,
+        verifySpeakReceipts: limits.verifySpeakReceipts,
+        dryRun: limits.dryRun,
+        contextAware: limits.contextAware,
+        contextQuotes: limits.contextQuotes,
+        knownChannelsOnly: limits.knownChannelsOnly,
+        onlyWhenIdle: limits.onlyWhenIdle,
+        awayDetection: limits.awayDetection,
+        awayIdleMinutes: limits.awayIdleMinutes,
+        pauseWhenLocked: limits.pauseWhenLocked,
+        awayHint: limits.awayHint,
+        awayIdleProbe: limits.awayIdleProbe,
+        dreamEnabled: limits.dreamEnabled,
+        dreamChance: limits.dreamChance,
+        dreamAfterMinutes: limits.dreamAfterMinutes,
+        dreamMaxPerNight: limits.dreamMaxPerNight,
+        dreamDiary: limits.dreamDiary,
+        willingnessEnabled: limits.willingnessEnabled,
+        willingnessMaxMinutes: limits.willingnessMaxMinutes,
+        willingnessHint: limits.willingnessHint,
+        debug: limits.debug,
+      },
+      runtime: {
+        phase: this.phaseState,
+        rounds: this.rounds,
+        lastActivitySeen: new Date(this.lastActivitySeen).toISOString(),
+        lastNudgeAt: this.lastNudgeAt > 0 ? new Date(this.lastNudgeAt).toISOString() : null,
+        suppressedUntil: this.suppressedUntil > 0 ? new Date(this.suppressedUntil).toISOString() : null,
+        inWindow: windowNow?.kind ?? null,
+        presence: this.presenceCache,
+        channels: [...this.channelPrefixes].sort(),
+        messageProblems: this.messageProblems,
+      },
+      state: this.state,
+      status: {
+        nudgesToday: this.state.nudgesToday,
+        unanswered: this.state.unanswered,
+        factor: this.willingnessFactor(limits),
+        wakingInMinutes: limits.maxRounds > 0 && this.rounds >= limits.maxRounds ? null : this.minutesUntilDue(limits),
+      },
+      log: this.debugLines.slice(-200),
+    });
+    if (error) this.host?.log.warn('作息:诊断文件写不进去', { error });
+  }
   /** 给其他软件读的公开状态：只放非敏感事实。 */
   private writeStatus(): void {
     const now = Date.now();
@@ -1419,7 +1514,9 @@ export class RhythmWorld implements World {
     const sleeping = windowNow?.kind === 'sleep';
     const { error } = writeJsonAtomic(join(this.opts.dataDir, 'rhythm', 'status.json'), {
       version: 1,
+      version: pluginVersion(),
       generatedAt: new Date(now).toISOString(),
+      debug: limits.debug,
       sleep: {
         active: sleeping,
         window: sleeping && windowNow ? `${formatClock(windowNow.window.start)}-${formatClock(windowNow.window.end)}` : null,

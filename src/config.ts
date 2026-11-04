@@ -33,6 +33,8 @@ export interface RhythmConfigSection extends WorldSection {
   willingnessMaxMinutes: number;
   /** 递减期间是否在叫醒正文里加一句情绪提示。 */
   willingnessHint: boolean;
+  /** 诊断模式：写可分享的 diagnostics.json 与 debug.log；默认关。 */
+  debug: boolean;
   /** 到点按概率跳过这一次（0–1）。预留：这版不进配置组，留 0 即关闭。 */
   skipChance: number;
   /** 睡眠时段的「该睡了 / 该醒了」两条提示。 */
@@ -105,6 +107,7 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   willingnessEnabled: false,
   willingnessMaxMinutes: 480,
   willingnessHint: true,
+  debug: false,
   skipChance: 0,
   sleepHint: true,
   wakeHint: true,
@@ -215,6 +218,12 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           type: 'boolean',
           title: t.willingnessHintTitle,
           description: t.willingnessHintDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.debug`]: {
+          type: 'boolean',
+          title: t.debugTitle,
+          description: t.debugDescription,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.sleepHint`]: {

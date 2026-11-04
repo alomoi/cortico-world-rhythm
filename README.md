@@ -86,6 +86,7 @@
 | `willingnessEnabled` | false | 搭话意愿：未回应时递减叫醒频率（P7） |
 | `willingnessMaxMinutes` | 480 | 递减的绝对封顶（分钟，60–720） |
 | `willingnessHint` | true | 递减期间是否加一句情绪提示 |
+| `debug` | false | 诊断模式：在 `data/rhythm/` 写 `diagnostics.json` 与 `debug.log`，可直接发给开发者排障 |
 | `dryRun` | false | 影子模式：只算什么时候该叫、写日志与状态，不投递任何事件 |
 | `contextAware` | true | 叫醒时带「安静多久 / 它上次开口有没有被接」这些事实 |
 | `contextQuotes` | true | 上下文可能丢失时引用原话（40 字，剥掉渠道标记） |
@@ -170,3 +171,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run.ps1 check.mjs
 ```
 
 加 `--write` 会按定义重写 `describe.json`。行为冒烟测试是 `scripts/smoke.mjs`（假宿主 + 假时钟）。两者都不启动 Coopanion，也不碰安装目录。
+
+## 诊断模式
+
+遇到问题时，打开 debug（设置 → 作息 → 诊断模式），插件会在
+<dataDir>/rhythm/ 写两个文件：
+
+- diagnostics.json：版本、配置快照、状态、最近 200 条决策日志；
+- debug.log：逐条决策日志（超过 256 KB 自动轮转）。
+
+把这两个文件发给开发者即可。**不含聊天正文**，只有时机、计数、配置与事件类型。
+排查完记得关掉。
