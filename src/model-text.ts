@@ -72,9 +72,9 @@ const OPENINGS: Record<ModelLanguage, (line: NudgeLine) => string> = {
   en: (line) => `[${line.at}] [rhythm] It has been quiet for about ${line.quietMinutes} minutes; ${line.user ?? 'the person'} is not talking to you.`,
 };
 
-const UNANSWERED_FACT: Record<ModelLanguage, string> = {
-  zh: '你前面说过一句，对方还没接。',
-  en: 'You spoke up earlier and nobody has answered yet.',
+const UNANSWERED_FACT: Record<ModelLanguage, (user: string) => string> = {
+  zh: (user) => `你前面说过一句，${user}还没接。`,
+  en: () => 'You spoke up earlier and nobody has answered yet.',
 };
 
 /**
@@ -82,25 +82,26 @@ const UNANSWERED_FACT: Record<ModelLanguage, string> = {
  * `round` 驱动收尾句轮换（防复读）；引用存在时给两行，总长超限就先丢引用。
  */
 export function nudgeText(language: ModelLanguage, line: NudgeLine): string {
+  const user = line.user ?? (language === 'zh' ? 'ta' : 'the person');
   const optional: string[] = [];
   const quotes: string[] = [];
-  // 主人不在电脑前是事实，优先保留（超长时先丢引用，最后才丢它）
+  // 桌宠的主人不在电脑前是事实，优先保留（超长时先丢引用，最后才丢它）
   if (line.away) {
     const idle = line.away.idleMinutes ?? 0;
     if (line.away.kind === 'locked') {
       optional.push(language === 'zh'
-        ? '主人现在不在电脑前（屏幕锁着）。'
-        : 'The person is not at the computer right now (the screen is locked).');
+        ? `${user}现在不在电脑前（屏幕锁着）。`
+        : `${user} is not at the computer right now (the screen is locked).`);
     } else {
       optional.push(language === 'zh'
-        ? `屏幕已经 ${idle} 分钟没有输入，主人可能在忙。`
-        : `The screen has had no input for ${idle} minutes; the person may be busy.`);
+        ? `屏幕已经 ${idle} 分钟没有输入，${user}可能在忙。`
+        : `The screen has had no input for ${idle} minutes; ${user} may be busy.`);
     }
   }
   if (line.quoteUser) {
     quotes.push(language === 'zh'
-      ? `对方最后一句（${line.quoteUser.at}）：「${line.quoteUser.text}」`
-      : `The last thing they said (${line.quoteUser.at}): "${line.quoteUser.text}"`);
+      ? `${user}最后一句（${line.quoteUser.at}）：「${line.quoteUser.text}」`
+      : `The last thing ${user} said (${line.quoteUser.at}): "${line.quoteUser.text}"`);
   }
   if (line.quoteSelf) {
     quotes.push(language === 'zh'
@@ -109,9 +110,9 @@ export function nudgeText(language: ModelLanguage, line: NudgeLine): string {
   }
   // 事实之间是 AND：away 不会挤掉它；只有 quoteSelf 已经写明「还没人接话」时才省略这一行
   if (line.unansweredText) optional.push(line.unansweredText);
-  else if (line.unanswered && !line.quoteSelf) optional.push(UNANSWERED_FACT[language]);
+  else if (line.unanswered && !line.quoteSelf) optional.push(UNANSWERED_FACT[language](user));
 
-  const closing = CLOSING[language](line.user ?? (language === 'zh' ? 'ta' : 'the person'));
+  const closing = CLOSING[language](user);
   optional.push(...quotes);
   const build = (extra: readonly string[]): string => [OPENINGS[language](line), ...extra, closing].join('\n');
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 作息 World：一段时间没人跟 Coo 说话，就把它叫醒一次，让它自己决定开不开口、
  * 先用哪个工具、还是什么都不说（end_turn）。叫醒靠一条 internal 事件投递，正文由
  * model-text.ts 按模型文本语言给；事件以 flush 投递，空闲的主循环收到即开始一轮。
@@ -987,7 +987,7 @@ export class RhythmWorld implements World {
             : `You dreamed a ${dream.type} dream last night${diary ? `, recorded in ${diary}` : ''}.`);
         }
         if (extra.length) {
-          extra.push(language === 'zh' ? '要不要跟主人提，由你决定。' : 'Whether to tell the person is up to you.');
+          extra.push(language === 'zh' ? `要不要跟${this.opts.ownerName() || 'ta'}提，由你决定。` : 'Whether to tell the person is up to you.');
         }
         this.sendHint('wake', now, {}, extra);
         this.state.sleep.wakeHintSent = true;
@@ -1041,7 +1041,8 @@ export class RhythmWorld implements World {
     const targetMinute = earliest + Math.floor(random() * span);
     const delta = ((targetMinute - nowMinute) + 1440) % 1440;
     const types = this.readMessages()[this.opts.language()].dreamTypes;
-    const type = types[Math.min(types.length - 1, Math.floor(random() * types.length))] ?? '梦';
+    const rawType = types[Math.min(types.length - 1, Math.floor(random() * types.length))] ?? '梦';
+    const type = fillTemplate(rawType, { user: this.opts.ownerName() || (this.opts.language() === 'zh' ? 'ta' : 'the person') });
     this.state.sleep.dreamPlan = { at: now + delta * 60_000, type };
     this.host?.log.info('作息:安排了一场梦', { at: new Date(this.state.sleep.dreamPlan.at).toISOString(), type });
   }

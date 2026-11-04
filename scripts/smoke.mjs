@@ -1173,7 +1173,7 @@ console.log('quotes only when context may be stale:');
   advance(15);
   h.world.tick();
   const text = String(h.pushes[0].spec.render());
-  check('a quote appears after a long quiet stretch', text.includes('对方最后一句'), text);
+  check('a quote appears after a long quiet stretch', text.includes('最后一句'), text);
   check('the quote keeps the words but strips markers', text.includes('今天好累') && !text.includes('【害羞】') && !text.includes('<wink>'), text);
   check('its own line is quoted too', text.includes('你上次说') && text.includes('我先去忙了'), text);
   await h.world.stop();
@@ -1191,7 +1191,7 @@ console.log('a context handoff triggers quotes even when the quiet is short:');
   advance(15);
   h.world.tick();
   const text = String(h.pushes[0].spec.render());
-  check('handoff makes the next nudge quote', text.includes('对方最后一句') && text.includes('刚才说到哪了'), text);
+  check('handoff makes the next nudge quote', text.includes('最后一句') && text.includes('刚才说到哪了'), text);
   await h.world.stop();
 }
 
@@ -1517,6 +1517,7 @@ console.log('dream: one nightly plan, the bot is asked to write the diary:');
   const seq = [0.5, 0.5, 0];
   let n = 0;
   h.world.opts.random = () => seq[Math.min(n++, seq.length - 1)];
+  h.world.opts.ownerName = () => '主人';
   await boot(h);
   advance(10); // 22:00 入夜
   h.world.tick();
@@ -1623,7 +1624,7 @@ console.log('facts are AND, and dates survive midnight:');
   });
   check('the away fact is present', text.includes('不在电脑前'), text);
   check('the unanswered fact is present too', text.includes('你前面说过一句'), text);
-  check('the user quote is present', text.includes('对方最后一句') && text.includes('11-02 23:50'), text);
+  check('the user quote is present', text.includes('最后一句') && text.includes('11-02 23:50'), text);
   check('the closing keeps every option', text.includes('工具'), text);
 
   const withSelf = nudgeText('zh', {
