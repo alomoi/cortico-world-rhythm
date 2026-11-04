@@ -131,7 +131,7 @@
 
 | 键 | 类型 | 缺省 | 说明 |
 |---|---|---|---|
-| `willingnessEnabled` | boolean | false | 总开关（先关，验证后再开） |
+| `willingnessEnabled` | boolean | **true** | 总开关（1.0.3 起默认开） |
 | `willingnessMaxMinutes` | integer | 480 | 封顶间隔（60–720，缺省 8 小时） |
 | `willingnessHint` | boolean | true | 递减期间是否加情绪提示行 |
 

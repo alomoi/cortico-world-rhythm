@@ -67,6 +67,8 @@ const NEW_CASE_DEFAULTS = {
   willingnessEnabled: false,
   willingnessMaxMinutes: 480,
   willingnessHint: true,
+  // 睡眠用例保持确定性：做梦默认开后，这里显式关掉；造梦用例自己打开。
+  dreamEnabled: false,
   skipChance: 0,
   knownChannelsOnly: false,
   activityIgnore: '',
@@ -153,7 +155,7 @@ console.log('config defaults:');
   check('sleep window defaults to 22:00-08:00', d.sleepWindow === '22:00-08:00');
   check('rest windows default empty', d.restWindows === '');
   check('dailyCap defaults to 12', d.dailyCap === 12);
-  check('willingness is off by default', d.willingnessEnabled === false);
+  check('willingness is on by default', d.willingnessEnabled === true);
   check('willingness cap defaults to 8 hours', d.willingnessMaxMinutes === 480);
   check('willingness hint defaults on', d.willingnessHint === true);
   check('diagnostics are off by default', d.debug === false);
@@ -171,7 +173,7 @@ console.log('config defaults:');
   check('pauseWhenLocked defaults off', d.pauseWhenLocked === false);
   check('awayHint defaults on', d.awayHint === true);
   check('idle probing defaults off (no runtime compile)', d.awayIdleProbe === false);
-  check('dreaming defaults off', d.dreamEnabled === false);
+  check('dreaming defaults on', d.dreamEnabled === true);
   check('dream chance defaults to 0.3', d.dreamChance === 0.3);
   check('dream diary defaults to the workspace-relative path', d.dreamDiary === 'partner/dreams.md');
   check('speakTools defaults to the four known send tools', /pet_say/.test(d.speakTools) && /clawbridge_send/.test(d.speakTools));

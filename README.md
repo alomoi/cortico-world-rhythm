@@ -78,12 +78,12 @@
 | `pauseWhenLocked` | false | 锁屏期间跳过叫醒（默认关：锁屏时可能更想用微信） |
 | `awayHint` | true | 是否把探测结果写进正文（关掉只写日志） |
 | `awayIdleProbe` | false | 额外用 Add-Type 取键鼠空闲秒数（会运行时编译，可能触发杀软；默认关） |
-| `dreamEnabled` | false | 睡眠时段里随机做梦（默认关；开启后由用户决定） |
+| `dreamEnabled` | true | 睡眠时段里按设置随机做梦 |
 | `dreamChance` | 0.3 | 每夜做梦的概率 |
 | `dreamAfterMinutes` | 60 | 入睡多久后才可能做梦 |
 | `dreamMaxPerNight` | 1 | 一夜最多几次梦 |
 | `dreamDiary` | `partner/dreams.md` | 提示它自己记梦的路径（相对它的工作区）；留空则不提示 |
-| `willingnessEnabled` | false | 搭话意愿：未回应时递减叫醒频率（P7） |
+| `willingnessEnabled` | true | 搭话意愿：未回应时递减叫醒频率（P7） |
 | `willingnessMaxMinutes` | 480 | 递减的绝对封顶（分钟，60–720） |
 | `willingnessHint` | true | 递减期间是否加一句情绪提示 |
 | `debug` | false | 诊断模式：在 `data/rhythm/` 写 `diagnostics.json` 与 `debug.log`，可直接发给开发者排障 |

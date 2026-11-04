@@ -119,7 +119,7 @@ dream?: { nightKey, at, type, text, shared: boolean }
 
 | 键 | 类型 | 缺省 | 说明 |
 |---|---|---|---|
-| `dreamEnabled` | boolean | **false** | 总开关，由用户决定开不开 |
+| `dreamEnabled` | boolean | **true** | 总开关，默认开（市场版） |
 | `dreamChance` | number | 0.3 | 每夜做梦的概率（0–1） |
 | `dreamAfterMinutes` | integer | 60 | 入睡多久后才可能做梦 |
 | `dreamMaxPerNight` | integer | 1 | 一夜最多几次（保留 1–3，缺省 1） |
