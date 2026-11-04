@@ -180,6 +180,20 @@ console.log('config defaults:');
 }
 
 // ── 1. 安静计时与第一次叫醒 ────────────────────────────────────────────────
+console.log('config groups: six feature cards covering every default:');
+{
+  const cfgmod = await import('../src/config.ts');
+  const groups = cfgmod.rhythmConfigGroups('zh');
+  check('six feature groups are declared', groups.length === 6, String(groups.length));
+  check('group ids are unique', new Set(groups.map((g) => g.id)).size === groups.length, groups.map((g) => g.id).join(','));
+  const paths = groups.flatMap((g) => Object.keys(g.schema.properties));
+  check('no property is declared twice', new Set(paths).size === paths.length, paths.join(','));
+  const defaults = Object.keys(cfgmod.RHYTHM_DEFAULTS).filter((key) => key !== 'skipChance' && key !== 'enabled');
+  const missing = defaults.filter((key) => !paths.includes(`worlds.rhythm.${key}`));
+  check('every default has a visible setting', missing.length === 0, missing.join(','));
+  check('each group has a title', groups.every((g) => typeof g.schema.title === 'string' && g.schema.title.length > 0));
+}
+
 console.log('first nudge:');
 {
   const h = harness();

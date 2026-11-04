@@ -1,10 +1,10 @@
-/**
+﻿/**
  * 作息（Rhythm）World 的配置段与 WebUI 配置组。
  *
  * `worlds.rhythm` 是组装层给出的活引用：WebUI 在「模块」页改值时就地写进这个对象，
  * World 每个检查周期现读，所以改完立即生效，不需要重启。
  */
-import type { ConfigGroup } from 'cortico/core/config-schema.ts';
+import type { ConfigGroup, ConfigProperty } from 'cortico/core/config-schema.ts';
 import type { Language } from 'cortico/core/language.ts';
 import type { WorldSection } from 'cortico/world.ts';
 import { uiText } from './ui-text.ts';
@@ -138,17 +138,11 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
 };
 
 /** 配置组：出现在作息 World 页，改值立即生效（检查周期里现读）。 */
-export function rhythmConfigGroup(language: Language): ConfigGroup {
+/** 所有配置项的 schema；按功能拆成多个配置组，WebUI 会分别渲染成卡片。 */
+function rhythmProperties(language: Language): Record<string, ConfigProperty> {
   const t = uiText(language);
-  const owner = `world:${RHYTHM_ID}` as const;
   return {
-    id: owner,
-    owner,
-    schema: {
-      type: 'object',
-      title: t.configTitle,
-      description: t.configDescription,
-      properties: {
+
         [`worlds.${RHYTHM_ID}.quietMinutes`]: {
           type: 'integer',
           title: t.quietTitle,
@@ -396,7 +390,52 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           description: t.onlyWhenIdleDescription,
           'x-hot': true,
         },
-      },
-    },
   };
+}
+
+/** 功能分区：基础 / 睡眠 / 意愿 / 做梦 / 场景 / 高级。 */
+export function rhythmConfigGroups(language: Language): ConfigGroup[] {
+  const t = uiText(language);
+  const owner = `world:${RHYTHM_ID}` as const;
+  const all = rhythmProperties(language);
+  const pick = (keys: Array<keyof RhythmConfigSection | 'debug'>) => Object.fromEntries(
+    keys.map((key) => [`worlds.${RHYTHM_ID}.${key}`, all[`worlds.${RHYTHM_ID}.${key}`]]),
+  );
+  const group = (
+    id: string,
+    title: string,
+    description: string,
+    keys: Array<keyof RhythmConfigSection | 'debug'>,
+  ): ConfigGroup => ({
+    id,
+    owner,
+    schema: {
+      type: 'object',
+      title,
+      description,
+      properties: pick(keys),
+    },
+  });
+  return [
+    group(owner, t.configBasicTitle, t.configBasicDescription, [
+      'quietMinutes', 'repeatMinutes', 'maxRounds', 'jitter', 'dailyCap',
+      'onlyWhenIdle', 'activityIgnore', 'knownChannelsOnly',
+    ]),
+    group(`${owner}:sleep`, t.configSleepTitle, t.configSleepDescription, [
+      'sleepWindow', 'restWindows', 'sleepHint', 'wakeHint', 'wakeGapMinutes', 'wakeHintSeconds',
+    ]),
+    group(`${owner}:willingness`, t.configWillingnessTitle, t.configWillingnessDescription, [
+      'willingnessEnabled', 'willingnessMaxMinutes', 'willingnessHint',
+    ]),
+    group(`${owner}:dream`, t.configDreamTitle, t.configDreamDescription, [
+      'dreamEnabled', 'dreamChance', 'dreamAfterMinutes', 'dreamMaxPerNight', 'dreamDiary',
+    ]),
+    group(`${owner}:away`, t.configAwayTitle, t.configAwayDescription, [
+      'awayDetection', 'awayIdleMinutes', 'pauseWhenLocked', 'awayHint', 'awayIdleProbe',
+    ]),
+    group(`${owner}:advanced`, t.configAdvancedTitle, t.configAdvancedDescription, [
+      'verifySpeakReceipts', 'dryRun', 'contextAware', 'contextQuotes', 'contextStaleMinutes',
+      'speakTools', 'speakIgnore', 'speakMatchAnywhere', 'channelAliases', 'debug',
+    ]),
+  ];
 }

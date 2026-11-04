@@ -36,7 +36,7 @@ import { join } from 'node:path';
 import type { EventEnvelope, OutputTap, RunPhase, World, WorldHost, WorldWebUiDecl } from 'cortico/core/types.ts';
 import type { Language } from 'cortico/core/language.ts';
 import { shortTime } from 'cortico/core/util.ts';
-import { rhythmConfigGroup, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
+import { rhythmConfigGroups, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
 import { fillTemplate, loadMessages, messagesPath, type HintKind } from './messages.ts';
 import { buildThread, sanitizeQuote } from './context.ts';
 import { nudgeText, type ModelLanguage, type NudgeQuote } from './model-text.ts';
@@ -246,7 +246,7 @@ export class RhythmWorld implements World {
         hint: limits.quietMinutes > 0 ? t.lampHint(this.lampInfo(limits, Date.now())) : t.lampOff,
       }],
       badges: [{ label: t.badgeToday, value: this.state.nudgesToday, tone: this.state.nudgesToday > 0 ? 'on' : 'plain' }],
-      config: [rhythmConfigGroup(language ?? 'zh')],
+      config: rhythmConfigGroups(language ?? 'zh'),
     };
   }
 

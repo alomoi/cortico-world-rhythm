@@ -31,6 +31,18 @@ export interface RhythmUi {
   label: string;
   configTitle: string;
   configDescription: string;
+  configBasicTitle: string;
+  configBasicDescription: string;
+  configSleepTitle: string;
+  configSleepDescription: string;
+  configWillingnessTitle: string;
+  configWillingnessDescription: string;
+  configDreamTitle: string;
+  configDreamDescription: string;
+  configAwayTitle: string;
+  configAwayDescription: string;
+  configAdvancedTitle: string;
+  configAdvancedDescription: string;
   quietTitle: string;
   quietDescription: string;
   repeatTitle: string;
@@ -119,6 +131,18 @@ export interface RhythmUi {
 const zh: RhythmUi = {
   label: '作息',
   configTitle: '作息',
+  configBasicTitle: '基础作息',
+  configBasicDescription: '多久叫醒一次、一段安静里最多叫几次、一天的总上限。',
+  configSleepTitle: '睡眠与休息',
+  configSleepDescription: '睡觉与休息的时段，以及「该睡了 / 该醒了」两条提示。',
+  configWillingnessTitle: '搭话意愿',
+  configWillingnessDescription: '主动搭话没人接时，慢慢拉长下次叫醒；你一对话就恢复。',
+  configDreamTitle: '做梦',
+  configDreamDescription: '睡眠时段里随机做一次梦，由 Coo 自己写进小本本。',
+  configAwayTitle: '场景感知',
+  configAwayDescription: '叫醒时探测锁屏/空闲，把事实写进正文。',
+  configAdvancedTitle: '高级与排障',
+  configAdvancedDescription: '回执核对、影子模式、上下文引用、说话工具识别与诊断模式。',
   configDescription: '安静一段时间后叫醒 Coo，让它自己决定说不说话、做点什么，慢慢过上自己的日子。改这里立即生效。',
   quietTitle: '安静多少分钟后叫醒',
   quietDescription: '没有人跟 Coo 说话多久之后叫醒它一次；0 表示关掉叫醒。',
@@ -222,6 +246,18 @@ const zh: RhythmUi = {
 const en: RhythmUi = {
   label: 'Rhythm',
   configTitle: 'Rhythm',
+  configBasicTitle: 'Wake-up basics',
+  configBasicDescription: 'How often it wakes up, how many tries per quiet stretch, and the daily cap.',
+  configSleepTitle: 'Sleep & rest',
+  configSleepDescription: 'Sleep and rest windows, plus the bedtime and wake-up lines.',
+  configWillingnessTitle: 'Talking willingness',
+  configWillingnessDescription: 'Unanswered outreach makes the next wake-up later; a conversation resets it.',
+  configDreamTitle: 'Dreaming',
+  configDreamDescription: 'One random dream during the sleep window, written into its own diary.',
+  configAwayTitle: 'Presence',
+  configAwayDescription: 'Checks lock/idle state when waking and puts the fact in the prompt.',
+  configAdvancedTitle: 'Advanced & diagnostics',
+  configAdvancedDescription: 'Receipt checks, shadow mode, context quotes, speech tool detection and diagnostics.',
   configDescription: 'After a quiet stretch the app wakes the bot so it can decide for itself whether to speak or do something, and slowly settle into a life of its own. Changes apply immediately.',
   quietTitle: 'Wake after quiet minutes',
   quietDescription: 'How long nobody talks to the bot before it is woken once; 0 turns the timer off.',
