@@ -124,6 +124,7 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 | 时段内与离开时段 | `world.ts › tick` | 时段内直接返回；离开时把安静起点重置到当前时刻 |
 | 时间参数 | `world.ts › limits` | 全局四个 + 时段/上限/退避六个 |
 | 安静判定 | `world.ts › dueAt` / `backoffMultiplier` | 首次 `quiet × jitter`；再次 `repeat × 退避倍数 × jitter` |
+| 搭话意愿 | `world.ts › willingnessFactor` / `applyActivityWillingness` | 未回应 +1；对话清零、戳摸减半、拎摔换装不算；睡醒减半（最少 1）；间隔 ×1.5，封顶 `willingnessMaxMinutes` |
 | 做梦 | `world.ts › planDream` / `maybeDream` | 入夜掷一次骰子；到点发一条 dream 提示，**让它自己把梦写进 `dreamDiary`**；插件不抓正文、不写文件 |
 | 主人状态探测 | `presence.ts`、`world.ts › nudgeAfterProbe` | 默认只查锁屏（纯 cmdlet，不编译，PS 5.1 兼容）；可选 `awayIdleProbe` 用 Add-Type 取空闲秒数；2s 超时、60s 缓存，不阻塞 tick |
 | 叫醒正文 | `world.ts › composeNudge` / `stamp` | 一条稳定模板 + 事实行（AND：锁屏、未接、引用）；时刻带日期 `11-03 周一 14:05`；跨天引用补日期 |
@@ -238,7 +239,7 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 - 兼容约定：任何渠道也可以主动推 `<前缀>.send-failed` 事件，同样生效。
 - **局限**：只发不收的渠道（从不推人侧事件）学不到前缀；不通过工具改状态的插件也看不到——这两种只能进 `speakTools`。
 - **公式**：`倍数 = min(上限, factor ^ max(0, unanswered - backoffAfter + 1))`——连续 N 次被无视后开始变稀。
-**本地验证**：`smoke.mjs` 266 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
+**本地验证**：`smoke.mjs` 281 条断言全绿，覆盖 P0/P1/P2：渠道无关判定、`*.self` 排除、时段解析与跨午夜、
 睡眠阻断与重新计时、排队作废、每日上限、退避时间表、概率跳过、重启续算、坏文件、
 **两条睡眠提示、重启不重发、被吵醒合并计数（30 分钟）、内部/自录不计、piggyback 与 90 秒过期、
 自定义文案、status.json 内容**。

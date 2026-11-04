@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 模型读到的文本（叫醒事件正文），中文与英文两版。
  *
  * 语言跟 Coopanion 的模型文本语言走：应用语言是 zh / zh-Hant 用中文，其余用英文。
@@ -63,13 +63,13 @@ export interface NudgeLine {
 const MAX_BODY_CHARS = 320;
 
 /** 唯一的收尾句：每次都保留「说话 / 用工具 / 结束」三个选项。 */
-const CLOSING: Record<ModelLanguage, string> = {
-  zh: '想说话就用你平时的方式说一句，想做事就用工具，不想就结束这一轮。',
-  en: 'If you want to say something, say it the way you usually do; use your tools if you have something to do; otherwise end this turn.',
+const CLOSING: Record<ModelLanguage, (user: string) => string> = {
+  zh: (user) => `想说话就用你平时的方式跟${user}说一句，想做事就用工具，不想就结束这一轮。`,
+  en: (user) => `If you want to say something, say it the way you usually do to ${user}; use your tools if you have something to do; otherwise end this turn.`,
 };
 const OPENINGS: Record<ModelLanguage, (line: NudgeLine) => string> = {
-  zh: (line) => `[${line.at}] [作息] 安静了约 ${line.quietMinutes} 分钟，没人跟你说话。`,
-  en: (line) => `[${line.at}] [rhythm] It has been quiet for about ${line.quietMinutes} minutes; nobody is talking to you.`,
+  zh: (line) => `[${line.at}] [作息] 安静了约 ${line.quietMinutes} 分钟，${line.user ?? 'ta'}没有跟你说话。`,
+  en: (line) => `[${line.at}] [rhythm] It has been quiet for about ${line.quietMinutes} minutes; ${line.user ?? 'the person'} is not talking to you.`,
 };
 
 const UNANSWERED_FACT: Record<ModelLanguage, string> = {
@@ -108,9 +108,10 @@ export function nudgeText(language: ModelLanguage, line: NudgeLine): string {
       : `You last said (${line.quoteSelf.at}): "${line.quoteSelf.text}"${line.quoteSelf.answered ? '.' : ', and nobody has replied.'}`);
   }
   // 事实之间是 AND：away 不会挤掉它；只有 quoteSelf 已经写明「还没人接话」时才省略这一行
-  if (line.unanswered && !line.quoteSelf) optional.push(UNANSWERED_FACT[language]);
+  if (line.unansweredText) optional.push(line.unansweredText);
+  else if (line.unanswered && !line.quoteSelf) optional.push(UNANSWERED_FACT[language]);
 
-  const closing = CLOSING[language];
+  const closing = CLOSING[language](line.user ?? (language === 'zh' ? 'ta' : 'the person'));
   optional.push(...quotes);
   const build = (extra: readonly string[]): string => [OPENINGS[language](line), ...extra, closing].join('\n');
 

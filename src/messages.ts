@@ -16,26 +16,41 @@ export type HintKind = 'sleep' | 'wake' | 'woken' | 'dream';
 
 export interface RhythmMessages {
   version: 1;
-  zh: Record<HintKind, string> & { dreamTypes: string[] };
-  en: Record<HintKind, string> & { dreamTypes: string[] };
+  /** 给用户看的说明：升级只补缺失键，不覆盖已有内容；删掉文件会重建。 */
+  _note: string;
+  zh: Record<HintKind, string> & { dreamTypes: string[]; willing: string[] };
+  en: Record<HintKind, string> & { dreamTypes: string[]; willing: string[] };
 }
 
 /** 内置默认值：文件缺失时写到磁盘，也是文件损坏时的兜底。 */
 export const DEFAULT_MESSAGES: RhythmMessages = {
   version: 1,
+  _note: '本文件可以自由修改。升级时只会补上缺失的键，不会覆盖你已经改过的内容；删掉本文件会按当前版本重新生成默认内容。',
   zh: {
     sleep: '[{at}] [作息] 到睡觉时间了。想睡的话可以用 pet_act 的 sleep 动作躺下（它会保持到你下一次动作）；不想睡就做自己的事，或者结束这一轮。',
     wake: '[{at}] [作息] 早上好，醒醒神。想动一动可以用 pet_act 的 stand 站起来，然后想做什么就做什么。',
-    woken: '[{at}] [作息] 你刚才在睡觉，被 {by} 吵醒了（今夜第 {count} 次）。要不要带点起床气，你自己决定；不想理就结束这一轮。',
+    woken: '[{at}] [作息] 你刚才在睡觉，{user}（{by}）把你吵醒了（今夜第 {count} 次）。要不要带点起床气，你自己决定；不想理就结束这一轮。',
     dream: '[{at}] [作息] 你正在熟睡，做了一个【{type}】的梦。把这场梦用一两句话追加记到 {diary} 里（没有就创建）；这只是写给自己看的记录，不会发出去。想继续睡可以用 pet_act 的 sleep 保持睡姿。（别说话、别用任何说话工具、别联系任何人。）',
     dreamTypes: ['天马行空的', '快乐的', '舒心的', '关于主人的', '有点伤感的'],
+    willing: [
+      '上次你主动搭话，{user}没有回复。',
+      '你连续两次主动搭话，{user}都没有回复，你有点担心{user}。',
+      '你连续三次主动搭话，{user}都没有回复，你有些失落。',
+      '你连续好多次主动搭话，{user}都没有回复，你有些落寞。',
+    ],
   },
   en: {
     sleep: '[{at}] [rhythm] It is bedtime. If you feel like it, you can lie down with the pet_act motion "sleep" (it is held until your next action); if not, do your own thing or end this turn.',
     wake: '[{at}] [rhythm] Morning, time to wake up. You can stand up with the pet_act motion "stand" and then do whatever you like.',
-    woken: '[{at}] [rhythm] You were asleep and {by} woke you up (wake-up #{count} tonight). Being a little grumpy about it is up to you; ignore it and end the turn if you would rather not.',
+    woken: '[{at}] [rhythm] You were asleep and {user} ({by}) woke you up (wake-up #{count} tonight). Being a little grumpy about it is up to you; ignore it and end the turn if you would rather not.',
     dream: '[{at}] [rhythm] You are fast asleep and dreaming a {type} dream. Append the dream in one or two sentences to {diary} (create it if needed); it is a private note to yourself and is not sent anywhere. If you want to keep sleeping, stay in the pet_act motion sleep. (This is a dream: do not speak, do not use any speech tool, do not contact anyone.)',
     dreamTypes: ['wild', 'happy', 'cozy', 'about the person', 'a little sad'],
+    willing: [
+      'You reached out last time and {user} did not reply.',
+      'You reached out twice in a row and {user} did not reply; you are a little worried about {user}.',
+      'You reached out three times in a row and {user} did not reply; you feel a bit down.',
+      'You have reached out many times and {user} did not reply; you feel a little lonely.',
+    ],
   },
 };
 
@@ -94,16 +109,18 @@ export function loadMessages(file: string): { messages: RhythmMessages; problems
   try {
     const raw: unknown = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
     const normalized = normalize(raw);
-    // 旧版文件没有 dream/dreamTypes：补进文件里，方便高阶用户直接改（不覆盖用户已有内容）
+    // 旧版文件缺少新键：只补缺失的键，不覆盖用户已有内容
     if (normalized.problems.length === 0 && typeof raw === 'object' && raw !== null) {
       const bag = raw as Record<string, unknown>;
       let changed = false;
+      if (!('_note' in bag)) { bag._note = DEFAULT_MESSAGES._note; changed = true; }
       for (const language of ['zh', 'en'] as const) {
         const table = bag[language];
         if (typeof table !== 'object' || table === null) continue;
         const target = table as Record<string, unknown>;
-        if (!('dream' in target)) { target.dream = DEFAULT_MESSAGES[language].dream; changed = true; }
-        if (!('dreamTypes' in target)) { target.dreamTypes = DEFAULT_MESSAGES[language].dreamTypes; changed = true; }
+        for (const [key, value] of Object.entries(DEFAULT_MESSAGES[language])) {
+          if (!(key in target)) { target[key] = value; changed = true; }
+        }
       }
       if (changed) {
         try { writeFileSync(file, `${JSON.stringify(bag, null, 2)}\n`, 'utf8'); } catch { /* 写不进去就用内存里的 */ }

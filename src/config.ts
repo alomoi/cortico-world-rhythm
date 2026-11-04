@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 作息（Rhythm）World 的配置段与 WebUI 配置组。
  *
  * `worlds.rhythm` 是组装层给出的活引用：WebUI 在「模块」页改值时就地写进这个对象，
@@ -27,12 +27,12 @@ export interface RhythmConfigSection extends WorldSection {
   restWindows: string;
   /** 一天（部署时区）最多叫醒几次；0 表示不限。 */
   dailyCap: number;
-  /** 连续几次没人理之后开始拉长间隔；0 表示不启用退避。 */
-  backoffAfter: number;
-  /** 每多一次没人回应，再次叫醒的间隔乘多少（1.0–3.0）。 */
-  backoffFactor: number;
-  /** 间隔最多拉长到基准的多少倍（1–10）。 */
-  backoffMaxFactor: number;
+  /** 搭话意愿：按「未回应次数」递减再次叫醒的频率（取代旧退避）。 */
+  willingnessEnabled: boolean;
+  /** 意愿最低时，再次叫醒的绝对封顶（分钟）。 */
+  willingnessMaxMinutes: number;
+  /** 递减期间是否在叫醒正文里加一句情绪提示。 */
+  willingnessHint: boolean;
   /** 到点按概率跳过这一次（0–1）。预留：这版不进配置组，留 0 即关闭。 */
   skipChance: number;
   /** 睡眠时段的「该睡了 / 该醒了」两条提示。 */
@@ -102,9 +102,9 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   sleepWindow: '22:00-08:00',
   restWindows: '',
   dailyCap: 12,
-  backoffAfter: 0,
-  backoffFactor: 1.5,
-  backoffMaxFactor: 4,
+  willingnessEnabled: false,
+  willingnessMaxMinutes: 480,
+  willingnessHint: true,
   skipChance: 0,
   sleepHint: true,
   wakeHint: true,
@@ -197,28 +197,24 @@ export function rhythmConfigGroup(language: Language): ConfigGroup {
           maximum: 200,
           'x-hot': true,
         },
-        [`worlds.${RHYTHM_ID}.backoffAfter`]: {
+        [`worlds.${RHYTHM_ID}.willingnessEnabled`]: {
+          type: 'boolean',
+          title: t.willingnessEnabledTitle,
+          description: t.willingnessEnabledDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.willingnessMaxMinutes`]: {
           type: 'integer',
-          title: t.backoffAfterTitle,
-          description: t.backoffAfterDescription,
-          minimum: 0,
-          maximum: 50,
+          title: t.willingnessMaxTitle,
+          description: t.willingnessMaxDescription,
+          minimum: 60,
+          maximum: 720,
           'x-hot': true,
         },
-        [`worlds.${RHYTHM_ID}.backoffFactor`]: {
-          type: 'number',
-          title: t.backoffFactorTitle,
-          description: t.backoffFactorDescription,
-          minimum: 1,
-          maximum: 3,
-          'x-hot': true,
-        },
-        [`worlds.${RHYTHM_ID}.backoffMaxFactor`]: {
-          type: 'number',
-          title: t.backoffMaxTitle,
-          description: t.backoffMaxDescription,
-          minimum: 1,
-          maximum: 10,
+        [`worlds.${RHYTHM_ID}.willingnessHint`]: {
+          type: 'boolean',
+          title: t.willingnessHintTitle,
+          description: t.willingnessHintDescription,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.sleepHint`]: {

@@ -8,6 +8,7 @@
  * 叫醒事件是 internal 投递：它是「机制在跟 Coo 说话」，不是外面的人说话。落到上下文里是
  * 一条 user 消息里的正文行（不是 system 前缀，也不是外部事件帧），所以正文自带 [时刻][作息] 标记。
  */
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorldDescribe, WorldDefinition } from 'cortico/world.ts';
 import { RHYTHM_DEFAULTS, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
@@ -15,6 +16,18 @@ import { modelLanguageOfConfigFile } from './model-text.ts';
 import { RhythmWorld } from './world.ts';
 
 /** 自描述：没有工具，只推出叫醒与睡眠提示两类事件。供扩展页与扩展市场阅读，不进提示词。 */
+/** 读桌宠对主人的称呼；读不到返回空串，由 World 决定回退成 ta / the person。 */
+function ownerNameOfConfigFile(file: string): string {
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as {
+      worlds?: Record<string, Record<string, unknown>>;
+    };
+    const user = raw.worlds?.['desktop-pet']?.user;
+    return typeof user === 'string' ? user.trim() : '';
+  } catch {
+    return '';
+  }
+}
 const DESCRIBE: WorldDescribe = {
   tools: [],
   events: [
@@ -54,6 +67,7 @@ const definition: WorldDefinition<RhythmConfigSection> = {
     dataDir: ctx.dataDir,
     botDir: ctx.botDir,
     language: () => modelLanguageOfConfigFile(join(ctx.botDir, 'config.json')),
+    ownerName: () => ownerNameOfConfigFile(join(ctx.botDir, 'config.json')),
   }),
   describe: DESCRIBE,
 };

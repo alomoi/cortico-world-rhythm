@@ -108,6 +108,8 @@ export interface RhythmOptions {
   botDir: string;
   /** 随机源；测试可注入，缺省 Math.random。 */
   random?: () => number;
+  /** 主人对它的称呼（配置里的名字）；取不到用 ta。 */
+  ownerName: () => string;
   /** 模型文本语言；每条事件渲染时现取。 */
   language: () => ModelLanguage;
   /** 主人状态探测；测试可注入，缺省用本机 Windows 探测。 */
@@ -120,9 +122,9 @@ interface Limits {
   maxRounds: number;
   jitter: number;
   dailyCap: number;
-  backoffAfter: number;
-  backoffFactor: number;
-  backoffMaxFactor: number;
+  willingnessEnabled: boolean;
+  willingnessMaxMinutes: number;
+  willingnessHint: boolean;
   skipChance: number;
   sleepHint: boolean;
   wakeHint: boolean;
@@ -558,10 +560,7 @@ export class RhythmWorld implements World {
     if (!attempt) return;
     const answered = this.latestPersonActivity().at > attempt.at;
     if (answered) {
-      if (this.state.unanswered !== 0) {
-        this.state.unanswered = 0;
-        this.host?.log.debug('作息:有人回应了，退避归零');
-      }
+      this.host?.log.debug('作息:有人回应了，不再计数');
       return;
     }
     if (!attempt.spoke) {
@@ -591,7 +590,7 @@ export class RhythmWorld implements World {
     this.state.unanswered += 1;
     this.host?.log.info('作息:搭话没人理', {
       unanswered: this.state.unanswered,
-      backoffAfter: this.limits().backoffAfter,
+      factor: this.willingnessFactor(this.limits()),
       waitedMin: Math.max(1, Math.round((Date.now() - attempt.at) / 60_000)),
     });
   }
@@ -627,9 +626,9 @@ export class RhythmWorld implements World {
       maxRounds: Math.max(0, Math.floor(numberIn(cfg.maxRounds, 0, 0, Number.MAX_SAFE_INTEGER))),
       jitter: numberIn(cfg.jitter, 0.2, 0, 0.5),
       dailyCap: Math.floor(numberIn(cfg.dailyCap, 12, 0, 1000)),
-      backoffAfter: Math.floor(numberIn(cfg.backoffAfter, 0, 0, 50)),
-      backoffFactor: numberIn(cfg.backoffFactor, 1.5, 1, 3),
-      backoffMaxFactor: numberIn(cfg.backoffMaxFactor, 4, 1, 10),
+      willingnessEnabled: cfg.willingnessEnabled === true,
+      willingnessMaxMinutes: Math.floor(numberIn(cfg.willingnessMaxMinutes, 480, 60, 720)),
+      willingnessHint: cfg.willingnessHint !== false,
       skipChance: numberIn(cfg.skipChance, 0, 0, 1),
       sleepHint: cfg.sleepHint !== false,
       wakeHint: cfg.wakeHint !== false,
@@ -693,12 +692,17 @@ export class RhythmWorld implements World {
    * 退避倍数：数的是「主动搭话却没人回」的次数（`state.unanswered`），不是叫醒次数。
    * 它安静地结束一轮、或者去查资料/整理文件，都不算一次失败的搭话。
    */
-  private backoffMultiplier(limits: Limits): number {
-    if (limits.backoffAfter <= 0) return 1;
-    // 连续 N 次被无视之后开始变稀：第 N+1 次起乘一次 factor。
-    const extra = this.state.unanswered - limits.backoffAfter + 1;
-    if (extra <= 0) return 1;
-    return Math.min(limits.backoffMaxFactor, Math.pow(limits.backoffFactor, extra));
+  /**
+   * 搭话意愿：未回应次数每多一次，间隔 ×1.5；封顶是绝对时间
+   * （`willingnessMaxMinutes`），所以基数大的用户也不会被拖到一整天。
+   */
+  private willingnessFactor(limits: Limits): number {
+    if (!limits.willingnessEnabled) return 1;
+    const count = Math.max(0, Math.floor(this.state.unanswered));
+    if (count <= 0) return 1;
+    const base = Math.max(1, limits.repeatMinutes) * 60_000;
+    const cap = Math.max(1, limits.willingnessMaxMinutes) * 60_000;
+    return Math.max(1, Math.min(Math.pow(1.5, count), cap / base));
   }
 
   /** 为下一个间隔掷一次随机倍数（1–1+jitter），第一次叫醒与每次再次叫醒之前各掷一次。 */
@@ -712,13 +716,13 @@ export class RhythmWorld implements World {
     if (this.rounds === 0) {
       return this.lastActivitySeen + limits.quietMinutes * 60_000 * this.jitterFactor;
     }
-    return this.lastNudgeAt + limits.repeatMinutes * 60_000 * this.backoffMultiplier(limits) * this.jitterFactor;
+    return this.lastNudgeAt + limits.repeatMinutes * 60_000 * this.willingnessFactor(limits) * this.jitterFactor;
   }
 
   /** 当前一拍的基础间隔（分钟），概率跳过时按它顺延。 */
   private intervalMinutes(limits: Limits): number {
     if (this.rounds === 0) return limits.quietMinutes;
-    return limits.repeatMinutes * this.backoffMultiplier(limits);
+    return limits.repeatMinutes * this.willingnessFactor(limits);
   }
 
   private minutesUntilDue(limits: Limits): number | null {
@@ -770,12 +774,41 @@ export class RhythmWorld implements World {
     return this.limits().knownChannelsOnly ? ACTIVITY_TYPES.has(event.type) : true;
   }
 
+  /** 人侧事件对「搭话意愿」的影响：对话清零、戳摸减半、摆弄不算。 */
+  private activityEffect(type: string, meta?: Record<string, unknown>): 'conversation' | 'touch' | 'none' {
+    if (type === 'desktop-pet.touch') {
+      const touch = meta?.touch;
+      const kind = typeof touch === 'object' && touch !== null
+        ? (touch as Record<string, unknown>).kind
+        : undefined;
+      return kind === 'pet' || kind === 'poke' ? 'touch' : 'none';
+    }
+    if (type === 'desktop-pet.figure') return 'none';
+    return 'conversation';
+  }
+
+  private applyActivityWillingness(type: string, meta?: Record<string, unknown>): void {
+    const effect = this.activityEffect(type, meta);
+    if (effect === 'conversation') {
+      if (this.state.unanswered !== 0) {
+        this.host?.log.info('作息:对话，搭话意愿恢复', { from: this.state.unanswered, type });
+        this.state.unanswered = 0;
+      }
+      return;
+    }
+    if (effect === 'touch' && this.state.unanswered > 0) {
+      const before = this.state.unanswered;
+      this.state.unanswered = Math.floor(before / 2);
+      this.host?.log.info('作息:戳摸，搭话意愿减半', { from: before, to: this.state.unanswered, type });
+    }
+  }
   /** 最近一条人侧动作的时刻与类型；上限是已知时刻。 */
-  private latestPersonActivity(): { at: number; type: string } {
+  private latestPersonActivity(): { at: number; type: string; meta?: Record<string, unknown> } {
     const host = this.host;
     if (!host) return { at: this.lastActivitySeen, type: '' };
     let at = this.lastActivitySeen;
     let type = '';
+    let meta: Record<string, unknown> | undefined;
     try {
       for (const event of host.store.range({ limit: SCAN_LIMIT, origin: 'external' })) {
         if (!this.isPersonActivity(event)) continue;
@@ -784,12 +817,13 @@ export class RhythmWorld implements World {
         if (Number.isFinite(when) && when > at) {
           at = when;
           type = event.type;
+          meta = event.meta;
         }
       }
     } catch {
       // 事件库读不出（还在重建）：这一拍按没有新活动处理
     }
-    return { at, type };
+    return { at, type, meta };
   }
 
   private tick(): void {
@@ -820,7 +854,7 @@ export class RhythmWorld implements World {
       const hadRounds = this.rounds > 0;
       this.lastActivitySeen = latest.at;
       this.rounds = 0;
-      this.state.unanswered = 0;
+      this.applyActivityWillingness(latest.type, latest.meta);
       this.attempt = null;
       if (this.handoffAt > 0 && latest.at > this.handoffAt) this.handoffAt = 0;
       this.suppressedUntil = 0;
@@ -943,10 +977,15 @@ export class RhythmWorld implements World {
       };
       this.persist();
     }
+    // 睡一觉：未回应次数减半（最少 1），别带着一整夜的递减进第二天。
+    if (this.state.unanswered > 0) {
+      const before = this.state.unanswered;
+      this.state.unanswered = Math.max(1, Math.floor(before / 2));
+      host?.log.info('作息:睡醒，搭话意愿回落一半', { from: before, to: this.state.unanswered });
+    }
     // 无论 sleep 还是 rest：安静与轮次都从头开始，避免时段结束整点立刻跳出来。
     this.lastActivitySeen = now;
     this.rounds = 0;
-    this.state.unanswered = 0;
     this.attempt = null;
     this.lastNudgeAt = 0;
     this.suppressedUntil = 0;
@@ -1076,7 +1115,7 @@ export class RhythmWorld implements World {
   private sendHint(
     kind: HintKind,
     now: number,
-    vars: { by?: string; count?: number; type?: string; diary?: string } = {},
+    vars: { by?: string; count?: number; type?: string; diary?: string; user?: string } = {},
     extraLines: readonly string[] = [],
   ): void {
     const host = this.host;
@@ -1089,6 +1128,7 @@ export class RhythmWorld implements World {
       count: vars.count === undefined ? '' : String(vars.count),
       type: vars.type ?? '',
       diary: vars.diary ?? '',
+      user: vars.user ?? (this.opts.ownerName() || (this.opts.language() === 'zh' ? 'ta' : 'the person')),
     });
     const text = extraLines.length ? `${base}\n${extraLines.join('\n')}` : base;
     const staleAfterMs = limits.wakeHintSeconds * 1000;
@@ -1205,7 +1245,7 @@ export class RhythmWorld implements World {
       nudgesToday: this.state.nudgesToday,
       dailyCap: limits.dailyCap,
       maxRounds: limits.maxRounds,
-      backoff: this.backoffMultiplier(limits),
+      willingness: this.willingnessFactor(limits),
       phase: this.phaseState,
       lastActivityType: latest.type,
     });
@@ -1272,6 +1312,16 @@ export class RhythmWorld implements World {
       }
     }
 
+    const owner = this.opts.ownerName();
+    const user = owner || (language === 'zh' ? 'ta' : 'the person');
+    let unansweredText: string | undefined;
+    if (limits.willingnessEnabled && limits.willingnessHint && this.state.unanswered > 0) {
+      const lines = this.readMessages()[language].willing;
+      const index = Math.min(lines.length - 1, this.state.unanswered - 1);
+      const template = lines[Math.max(0, index)];
+      if (template) unansweredText = fillTemplate(template, { user });
+    }
+
     let away: { kind: 'locked' | 'idle'; idleMinutes?: number } | null = null;
     if (limits.awayHint && presence) {
       if (presence.locked === true) away = { kind: 'locked' };
@@ -1286,6 +1336,8 @@ export class RhythmWorld implements World {
       again: round > 1,
       round,
       unanswered,
+      unansweredText,
+      user,
       away,
       quoteUser,
       quoteSelf,
@@ -1359,6 +1411,11 @@ export class RhythmWorld implements World {
       },
       today: { nudges: this.state.nudgesToday, cap: limits.dailyCap },
       speak: { channels: [...this.channelPrefixes].sort(), unanswered: this.state.unanswered },
+      willingness: {
+        unanswered: this.state.unanswered,
+        factor: this.willingnessFactor(limits),
+        nextNudgeInMinutes: this.minutesUntilDue(limits),
+      },
       presence: this.presenceCache ? {
         state: this.presenceState(this.presenceCache.presence),
         locked: this.presenceCache.presence.locked,

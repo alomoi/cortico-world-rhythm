@@ -64,9 +64,9 @@ const NEW_CASE_DEFAULTS = {
   sleepWindow: '',
   restWindows: '',
   dailyCap: 0,
-  backoffAfter: 0,
-  backoffFactor: 1.5,
-  backoffMaxFactor: 4,
+  willingnessEnabled: false,
+  willingnessMaxMinutes: 480,
+  willingnessHint: true,
   skipChance: 0,
   knownChannelsOnly: false,
   activityIgnore: '',
@@ -125,7 +125,7 @@ async function boot(h) {
 }
 
 /** 加一条事件；缺省 origin 为 external（和真实宿主一致）。 */
-function addEvent(h, type, { origin = 'external', at = clock } = {}) {
+function addEvent(h, type, { origin = 'external', at = clock, meta } = {}) {
   h.events.push({
     cursor: h.events.length + 1,
     type,
@@ -133,6 +133,7 @@ function addEvent(h, type, { origin = 'external', at = clock } = {}) {
     source: type.split('.')[0],
     origin,
     text: type,
+    meta,
   });
 }
 
@@ -152,7 +153,9 @@ console.log('config defaults:');
   check('sleep window defaults to 22:00-08:00', d.sleepWindow === '22:00-08:00');
   check('rest windows default empty', d.restWindows === '');
   check('dailyCap defaults to 12', d.dailyCap === 12);
-  check('backoff is off by default', d.backoffAfter === 0);
+  check('willingness is off by default', d.willingnessEnabled === false);
+  check('willingness cap defaults to 8 hours', d.willingnessMaxMinutes === 480);
+  check('willingness hint defaults on', d.willingnessHint === true);
   check('skipChance defaults to 0', d.skipChance === 0);
   check('sleepHint defaults on', d.sleepHint === true);
   check('wakeHint defaults on', d.wakeHint === true);
@@ -729,10 +732,10 @@ console.log('maxRounds and dailyCap, whichever comes first:');
 /** 模拟主会话流：它调用了某个工具。 */
 const tapTool = (h, name) => h.world.outputTap().onEvent({ type: 'response.output_item.added', item: { type: 'function_call', name } });
 
-console.log('backoff counts only unanswered outreach:');
+console.log('willingness counts only unanswered outreach:');
 {
   at('2026-11-02T09:00:00+08:00');
-  const h = harness({ repeatMinutes: 10, backoffAfter: 1, backoffFactor: 2, backoffMaxFactor: 4 });
+  const h = harness({ repeatMinutes: 10, willingnessEnabled: true });
   await boot(h);
   advance(15);
   h.world.tick();                        // 1 @ 15，静默（没开口）
@@ -744,25 +747,25 @@ console.log('backoff counts only unanswered outreach:');
   h.world.tick();                        // 2 @ 25，结算 → unanswered 1
   check('an unanswered outreach is counted', h.world.state.unanswered === 1, `${h.world.state.unanswered}`);
 
-  advance(19);
-  h.world.tick();                        // 44
-  check('no nudge before the doubled interval', h.pushes.length === 2);
+  advance(14);
+  h.world.tick();                        // 39
+  check('no nudge before the stretched interval', h.pushes.length === 2);
   advance(1);
-  h.world.tick();                        // 45 = 25 + 10×2
-  check('the interval doubles after the first ignored outreach', h.pushes.length === 3);
+  h.world.tick();                        // 40 = 25 + 10×1.5
+  check('the interval stretches by 1.5 after the first ignored outreach', h.pushes.length === 3);
 
   tapTool(h, 'web_search');              // 这一轮它去查资料，没跟人说话
-  advance(20);
-  h.world.tick();                        // 65 = 45 + 20
-  check('a silent research turn still nudges on schedule', h.pushes.length === 4);
-  check('and it does not make the backoff worse', h.world.state.unanswered === 1);
-
-  advance(20);
-  addEvent(h, 'qq.message');
-  h.world.tick();                        // 有人回话 → 退避清零
-  check('a reply clears the unanswered count', h.world.state.unanswered === 0);
   advance(15);
-  h.world.tick();                        // 安静的基准间隔再次生效
+  h.world.tick();                        // 55 = 40 + 15
+  check('a silent research turn still nudges on schedule', h.pushes.length === 4);
+  check('and it does not make the willingness worse', h.world.state.unanswered === 1);
+
+  advance(15);
+  addEvent(h, 'qq.message');
+  h.world.tick();                        // 70：有人回话 → 意愿恢复
+  check('a reply clears the unanswered count', h.world.state.unanswered === 0);
+  advance(30);
+  h.world.tick();                        // 100：安静的基准间隔再次生效
   check('the base interval is back after a reply', h.pushes.length === 5);
   await h.world.stop();
 }
@@ -1567,7 +1570,7 @@ console.log('dream: an older messages.json gets the new keys:');
 console.log('a fact line survives the away line:');
 {
   at('2026-11-02T09:00:00+08:00');
-  const h = harness({ awayDetection: true, backoffAfter: 1 });
+  const h = harness({ awayDetection: true, willingnessEnabled: true });
   usePresence(h, { locked: true, idleSeconds: 0 });
   await boot(h);
   advance(1);
@@ -1579,7 +1582,7 @@ console.log('a fact line survives the away line:');
   await settlePresence(h);
   const text = String(h.pushes[0]?.spec.render());
   check('the away line is there', text.includes('不在电脑前'), text);
-  check('and the unanswered fact is not swallowed', text.includes('你前面说过一句，对方还没接'), text);
+  check('and the willingness line is not swallowed', text.includes('上次你主动搭话'), text);
   await h.world.stop();
 }
 
@@ -1620,6 +1623,95 @@ console.log('the opening carries the date:');
   const hint = String(h.hints[0]?.spec.render());
   check('hints show the month and day', /11-02/.test(hint), hint);
   check('and the time', hint.includes('22:00'), hint);
+  await h.world.stop();
+}
+
+// ── 34. 搭话意愿（P7） ────────────────────────────────────────────────────
+console.log('willingness: 1.5x growth, absolute cap:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ repeatMinutes: 45, willingnessEnabled: true, willingnessMaxMinutes: 480 });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  check('the first nudge fires', h.pushes.length === 1);
+  h.world.state.unanswered = 6;
+  advance(479);
+  h.world.tick();
+  check('no nudge before the absolute cap', h.pushes.length === 1);
+  advance(1);
+  h.world.tick();
+  check('the cap lands at 480 minutes', h.pushes.length === 2, String(h.pushes.length));
+  await h.world.stop();
+}
+
+console.log('willingness: conversation zeroes, touch halves, throwing does not:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness();
+  await boot(h);
+  h.world.state.unanswered = 4;
+  advance(1);
+  addEvent(h, 'desktop-pet.touch', { meta: { touch: { kind: 'pet' } } });
+  h.world.tick();
+  check('petting halves the count', h.world.state.unanswered === 2, String(h.world.state.unanswered));
+  h.world.state.unanswered = 4;
+  advance(1);
+  addEvent(h, 'desktop-pet.touch', { meta: { touch: { kind: 'throw' } } });
+  h.world.tick();
+  check('throwing does not change it', h.world.state.unanswered === 4, String(h.world.state.unanswered));
+  h.world.state.unanswered = 4;
+  advance(1);
+  addEvent(h, 'qq.message');
+  h.world.tick();
+  check('a conversation clears it', h.world.state.unanswered === 0, String(h.world.state.unanswered));
+  await h.world.stop();
+}
+
+console.log('willingness: a night halves it (never below 1):');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h);
+  advance(10);
+  h.world.tick();
+  h.world.state.unanswered = 6;
+  at('2026-11-03T08:00:00+08:00');
+  h.world.tick();
+  check('six becomes three after waking', h.world.state.unanswered === 3, String(h.world.state.unanswered));
+  await h.world.stop();
+}
+
+console.log('willingness: four emotional levels with the owner name:');
+{
+  const expected = ['上次你主动搭话，主人没有回复。', '你有点担心主人', '你有些失落', '你有些落寞'];
+  for (let level = 1; level <= 4; level += 1) {
+    at('2026-11-02T09:00:00+08:00');
+    const h = harness({ repeatMinutes: 10, willingnessEnabled: true });
+    h.world.opts.ownerName = () => '主人';
+    await boot(h);
+    advance(15);
+    h.world.tick();
+    h.world.state.unanswered = level;
+    h.world.lastNudgeAt = clock - 120 * 60 * 1000;
+    h.world.rounds = 1;
+    h.world.tick();
+    const text = String(h.pushes[1]?.spec.render());
+    check(`level ${level} carries its line`, text.includes(expected[level - 1]), text);
+    await h.world.stop();
+  }
+}
+
+console.log('willingness: the status file exposes it:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ willingnessEnabled: true });
+  await boot(h);
+  h.world.state.unanswered = 2;
+  h.world.persist();
+  const status = JSON.parse(readFileSync(join(h.dir, 'deployment', 'data', 'rhythm', 'status.json'), 'utf8'));
+  check('status has willingness', status.willingness?.unanswered === 2, JSON.stringify(status.willingness));
+  check('status has the factor', status.willingness?.factor === 2.25, JSON.stringify(status.willingness));
   await h.world.stop();
 }
 

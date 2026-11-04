@@ -45,12 +45,12 @@ export interface RhythmUi {
   restDescription: string;
   dailyCapTitle: string;
   dailyCapDescription: string;
-  backoffAfterTitle: string;
-  backoffAfterDescription: string;
-  backoffFactorTitle: string;
-  backoffFactorDescription: string;
-  backoffMaxTitle: string;
-  backoffMaxDescription: string;
+  willingnessEnabledTitle: string;
+  willingnessEnabledDescription: string;
+  willingnessMaxTitle: string;
+  willingnessMaxDescription: string;
+  willingnessHintTitle: string;
+  willingnessHintDescription: string;
   sleepHintTitle: string;
   sleepHintDescription: string;
   wakeHintTitle: string;
@@ -132,12 +132,12 @@ const zh: RhythmUi = {
   restDescription: '逗号分隔，每段 HH:MM-HH:MM，例如 12:30-14:00, 18:00-18:30；留空表示没有休息时段。删掉某段就代表不再休息。',
   dailyCapTitle: '每日叫醒上限',
   dailyCapDescription: '一天（按部署时区）最多主动叫醒几次；0 表示不限。',
-  backoffAfterTitle: '连续几次没人理后开始变稀',
-  backoffAfterDescription: '叫醒之后一直没人说话，连续这么多次之后，再次叫醒的间隔按倍数拉长；对方一说话就恢复。0 表示不启用。',
-  backoffFactorTitle: '变稀倍数',
-  backoffFactorDescription: '每多一次没人回应，间隔乘这个数（1.0–3.0）。例如 1.5 表示每次延长一半。',
-  backoffMaxTitle: '变稀封顶',
-  backoffMaxDescription: '间隔最多拉长到基准的多少倍（1–10），防止越等越久。',
+  willingnessEnabledTitle: '搭话意愿（递减叫醒频率）',
+  willingnessEnabledDescription: '它主动搭话没人接时，再次叫醒的间隔按 1.5 倍递减；你一对话就立刻恢复，睡醒后减半。默认关。',
+  willingnessMaxTitle: '递减封顶（分钟）',
+  willingnessMaxDescription: '间隔最多拉长到这么多分钟（60–720，默认 480 = 8 小时）。',
+  willingnessHintTitle: '递减期间加一句情绪提示',
+  willingnessHintDescription: '在叫醒正文里按未回应次数加一句「担心/失落/落寞」的提示；只给信息，怎么应对由它决定。',
   sleepHintTitle: '睡眠时段给 Coo 提示',
   sleepHintDescription: '到点发一句「该睡了」、早上发一句「该醒了」，让 Coo 自己决定用不用 pet_act 躺下或站起来。文案在 data/rhythm/messages.json 里改。只在启用了睡眠时段时生效。',
   wakeHintTitle: '被吵醒时提示 Coo',
@@ -233,12 +233,12 @@ const en: RhythmUi = {
   restDescription: 'Comma-separated HH:MM-HH:MM entries, e.g. 12:30-14:00, 18:00-18:30. Leave empty for none. Delete an entry to drop that rest.',
   dailyCapTitle: 'Daily wake-up cap',
   dailyCapDescription: 'How many proactive wake-ups per day (deployment timezone); 0 means no limit.',
-  backoffAfterTitle: 'Start slowing after how many ignored wake-ups',
-  backoffAfterDescription: 'After this many consecutive unanswered wake-ups the repeat interval starts stretching; talking to the bot resets it. 0 disables backoff.',
-  backoffFactorTitle: 'Slow-down factor',
-  backoffFactorDescription: 'Each extra unanswered wake-up multiplies the interval by this (1.0–3.0).',
-  backoffMaxTitle: 'Slow-down cap',
-  backoffMaxDescription: 'The interval never stretches beyond this multiple of its base (1–10).',
+  willingnessEnabledTitle: 'Talking willingness (slow down wake-ups)',
+  willingnessEnabledDescription: 'When its outreach goes unanswered, later wake-ups come 1.5x further apart; talking to it resets immediately, and a night of sleep halves the count. Off by default.',
+  willingnessMaxTitle: 'Slow-down cap (minutes)',
+  willingnessMaxDescription: 'The longest gap the slow-down can reach (60-720, default 480 = 8h).',
+  willingnessHintTitle: 'Add a feeling line while slowing down',
+  willingnessHintDescription: 'Adds a short worried/lonely line to the prompt based on unanswered count. Information only; how to react is the bot decision.',
   sleepHintTitle: 'Sleep messages to the bot',
   sleepHintDescription: 'One "go to sleep" at the start of the window and one "wake up" at the end, so the bot may lie down or stand up with pet_act. Edit the wording in data/rhythm/messages.json. Only active when a sleep window is set.',
   wakeHintTitle: 'Tell the bot it was woken',
