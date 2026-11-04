@@ -434,7 +434,7 @@ export function rhythmConfigGroups(language: Language): ConfigGroup[] {
       'awayDetection', 'awayIdleMinutes', 'pauseWhenLocked', 'awayHint', 'awayIdleProbe',
     ]),
     group(`${owner}:advanced`, t.configAdvancedTitle, t.configAdvancedDescription, [
-      'verifySpeakReceipts', 'dryRun', 'contextAware', 'contextQuotes', 'contextStaleMinutes',
+      'verifySpeakReceipts', 'contextAware', 'contextQuotes', 'contextStaleMinutes',
       'speakTools', 'speakIgnore', 'speakMatchAnywhere', 'channelAliases', 'dryRun', 'debug',
     ]),
   ];
