@@ -5,7 +5,7 @@
 > - 上游：`cortico-world-selftalk@0.2.2`（npm 最新版）；源码取自已安装的扩展目录，上游 GitHub 本机连不上，无 git 历史。
 > - 本 fork 改名：包名 `cortico-world-rhythm`、World id **`rhythm`**、显示名「作息」。
 >   目标不再是"安静后叫醒一次"，而是**让桌宠有自己的生活节律**（作息），后续功能见计划文档。
-> - 版本：`1.0.0`（正式版）；`private: true`（不发布 npm；要发布先摘掉这个字段）。
+> - 版本：`1.0.4`（正式版）；`private: true`（不发布 npm；要发布先摘掉这个字段）。
 > - 开发手册见 [`docs/dev-notes.md`](docs/dev-notes.md)，改进计划见 [`docs/fork-plan.md`](docs/fork-plan.md)，
 >   交接记录见 [`docs/handoff.md`](docs/handoff.md)（这个项目由大肥鱼开始，也一直由大肥鱼维护）。
 > - 本地验证（不需要启动 Coopanion）：
