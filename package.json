@@ -32,11 +32,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/qwq-awa-qnq/cortico-world-selftalk.git"
+    "url": "git+https://github.com/alomoi/cortico-world-rhythm.git"
   },
-  "homepage": "https://github.com/qwq-awa-qnq/cortico-world-selftalk#readme",
+  "homepage": "https://github.com/alomoi/cortico-world-rhythm#readme",
   "bugs": {
-    "url": "https://github.com/qwq-awa-qnq/cortico-world-selftalk/issues"
+    "url": "https://github.com/alomoi/cortico-world-rhythm/issues"
   },
   "engines": {
     "node": ">=22"
