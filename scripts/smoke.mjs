@@ -1401,7 +1401,23 @@ console.log('presence: idle minutes show up:');
   h.world.tick();
   await settlePresence(h);
   const text = String(h.pushes[0]?.spec.render());
-  check('the idle minutes reach the prompt', text.includes('20 分钟没有输入'), text);
+  check('the idle minutes reach the prompt', text.includes('电脑已经 20 分钟没动过了'), text);
+  check('and the locked wording is not mixed in', !text.includes('屏幕锁着'), text);
+  await h.world.stop();
+}
+
+console.log('presence: locked wins and idle is omitted:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ awayDetection: true, awayIdleMinutes: 10 });
+  usePresence(h, { locked: true, idleSeconds: 1200 });
+  await boot(h);
+  advance(15);
+  h.world.tick();
+  await settlePresence(h);
+  const text = String(h.pushes[0]?.spec.render());
+  check('the locked fact is shown', text.includes('屏幕锁着'), text);
+  check('the idle fact is not diluted in', !text.includes('没动过'), text);
   await h.world.stop();
 }
 

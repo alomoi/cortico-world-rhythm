@@ -52,8 +52,8 @@ export interface NudgeLine {
   round: number;
   /** 它上一次开口有没有被接——只给事实，不含内容。 */
   unanswered: boolean;
-  /** 主人是否在电脑前：锁屏 / 长时间没输入。 */
-  away?: { kind: 'locked' | 'idle'; idleMinutes?: number } | null;
+  /** 主人是否在电脑前：锁屏 / 长时间没输入（二者只出一个）。 */
+  away?: { kind: 'locked' } | { kind: 'idle'; idleMinutes: number } | null;
   /** 上下文可能丢失时才提供的引用（对方 / 自己）。 */
   quoteUser?: NudgeQuote | null;
   quoteSelf?: NudgeQuote | null;
@@ -85,17 +85,17 @@ export function nudgeText(language: ModelLanguage, line: NudgeLine): string {
   const user = line.user ?? (language === 'zh' ? 'ta' : 'the person');
   const optional: string[] = [];
   const quotes: string[] = [];
-  // 桌宠的主人不在电脑前是事实，优先保留（超长时先丢引用，最后才丢它）
+  // 锁屏与空闲互斥：锁屏只说锁屏，没锁才说空闲
   if (line.away) {
-    const idle = line.away.idleMinutes ?? 0;
     if (line.away.kind === 'locked') {
       optional.push(language === 'zh'
         ? `${user}现在不在电脑前（屏幕锁着）。`
         : `${user} is not at the computer right now (the screen is locked).`);
     } else {
+      const idle = line.away.idleMinutes;
       optional.push(language === 'zh'
-        ? `屏幕已经 ${idle} 分钟没有输入，${user}可能在忙。`
-        : `The screen has had no input for ${idle} minutes; ${user} may be busy.`);
+        ? `电脑已经 ${idle} 分钟没动过了，${user}或许不在电脑前。`
+        : `The computer has been idle for ${idle} minutes; ${user} may not be at the desk.`);
     }
   }
   if (line.quoteUser) {
