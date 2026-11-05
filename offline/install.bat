@@ -11,7 +11,7 @@ if not exist "%APP%\Coopanion.exe" (
   exit /b 1
 )
 
-set "TGZ=%~dp0cortico-world-rhythm-1.0.6-offline.tgz"
+set "TGZ=%~dp0cortico-world-rhythm-1.0.7-offline.tgz"
 if not exist "%TGZ%" (
   echo [X] 没找到安装包：%TGZ%
   echo     请把 tgz 和本脚本放在同一个文件夹里。
