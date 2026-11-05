@@ -1544,6 +1544,8 @@ console.log('dream: one nightly plan, the bot is asked to write the diary:');
   const wake = h.hints.filter((x) => x.spec.meta.kind === 'wake').at(-1);
   const wakeText = String(wake?.spec.render());
   check('the morning hint mentions the dream', wakeText.includes('你昨晚做了一个【天马行空的】的梦'), wakeText);
+  check('the dream comes before the choice lines', wakeText.indexOf('你昨晚做了一个') < wakeText.indexOf('想说话'), wakeText);
+  check('and the closing line stays last', wakeText.split('\\n').at(-1).includes('做完就结束这一轮'), wakeText);
   check('and points at the diary', wakeText.includes('记在 partner/dreams.md 里'), wakeText);
   check('but sharing stays the bot decision', wakeText.includes('要不要跟主人提，由你决定'), wakeText);
   await h.world.stop();

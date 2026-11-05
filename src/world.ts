@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 作息 World：一段时间没人跟 Coo 说话，就把它叫醒一次，让它自己决定开不开口、
  * 先用哪个工具、还是什么都不说（end_turn）。叫醒靠一条 internal 事件投递，正文由
  * model-text.ts 按模型文本语言给；事件以 flush 投递，空闲的主循环收到即开始一轮。
@@ -1166,7 +1166,13 @@ export class RhythmWorld implements World {
       user: vars.user ?? (this.opts.ownerName() || (this.opts.language() === 'zh' ? 'ta' : 'the person')),
       date: vars.date ?? '',
     });
-    const text = extraLines.length ? `${base}\n${extraLines.join('\n')}` : base;
+    // 附加事实放在开头之后、行为选项之前：别让「结束这一轮」把梦挤到后面去
+    const text = extraLines.length
+      ? (() => {
+        const lines = base.split('\n');
+        return [lines[0], ...extraLines, ...lines.slice(1)].join('\n');
+      })()
+      : base;
     const staleAfterMs = limits.wakeHintSeconds * 1000;
     this.diag('提示', { kind });
     host.log.info('作息:睡眠提示', { kind, phase: this.phaseState });
