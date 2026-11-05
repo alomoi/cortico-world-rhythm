@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-rhythm",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "private": false,
   "publishConfig": {
@@ -73,11 +73,11 @@
     "locales": {
       "zh": {
         "displayName": "作息",
-        "description": "让桌宠有自己的生活节律：安静后叫醒、睡觉与醒来、做梦、搭话意愿与场景感知。只给时机和事实，怎么回应由桌宠自己决定。"
+        "description": "让桌宠有自己的生活节律——什么时候主动搭话、什么时候安静、什么时候睡觉和休息、有时还会做梦。只给时机和事实，怎么回应由桌宠自己决定。"
       },
       "en": {
         "displayName": "Rhythm",
-        "description": "Give your desktop pet a daily rhythm: wake-ups after quiet time, sleep and mornings, dreams, talking willingness and presence facts. Timing and facts only; the pet decides how to respond."
+        "description": "Give your desktop pet a daily rhythm — when to reach out, when to stay quiet, when to sleep and rest, and sometimes to dream. Timing and facts only; the pet decides how to respond."
       }
     }
   }
