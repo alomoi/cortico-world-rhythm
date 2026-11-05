@@ -7,7 +7,6 @@
 | [`p1-design.md`](p1-design.md) | P1 设计稿：时段表语法与匹配规则、每日上限、退避、新增配置键、测试计划、待拍板问题 | 主人 + 开发者 |
 | [`p2-sleep-design.md`](p2-sleep-design.md) | P2 设计：让形象真的睡（模型中介 `pet_act`）、被吵醒计数、`status.json` 共享通道 | 主人 + 开发者 |
 | [`host-apis.md`](host-apis.md) | 框架给扩展 World 的全部运行时能力（推/读事件、定时器、注入、工具、WebUI、提示词、存储、钩子）+ 源码行号 + 坑 | 写代码时查 |
-| [`coo-capabilities.md`](coo-capabilities.md) | 本机 Coo 的人设、已装 World、工具清单、事件类型、主动开口的可行路径 | 设计功能时查 |
 
 其他：
 

@@ -1,7 +1,7 @@
 ﻿# 作息（rhythm）fork · 开发笔记
 
 > 这份文件只写**本地开发环境与这个 fork 的工作方式**。功能设计见 `fork-plan.md`，
-> 宿主 API 详见 `host-apis.md`，Coo 现有能力详见 `coo-capabilities.md`。
+> 宿主 API 详见 `host-apis.md`。
 >
 > fork 基线：`cortico-world-selftalk@0.2.2`（npm 上最新版，2026-10 装机时的版本）。
 > **本 fork 已改名**：包 `cortico-world-rhythm`、World id `rhythm`、显示名「作息」。

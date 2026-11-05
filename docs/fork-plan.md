@@ -1,7 +1,7 @@
 ﻿# 作息（rhythm）fork · 改进计划
 
 > 状态：**线上 1.0.4；仓库 1.0.5（市场准备）**。P0–P8 全部落地；下面的候选清单保留作历史与后续讨论。
-> 环境与代码基线见 `dev-notes.md`；宿主能力见 `host-apis.md`；Coo 现有能力见 `coo-capabilities.md`。
+> 环境与代码基线见 `dev-notes.md`；宿主能力见 `host-apis.md`。
 >
 > 目标一句话：**让桌宠有自己的作息，像在过日子**——该醒的时候醒、该安静的时候安静、
 > 说话接得上茬、用户看得见也管得住。
@@ -33,7 +33,7 @@
 
 ## 3. 改进候选
 
-### 3.0 四条硬事实（调研 `host-apis.md` / `coo-capabilities.md`，直接决定怎么做）
+### 3.0 四条硬事实（调研 `host-apis.md`，直接决定怎么做）
 
 1. **World 拿不到 `TimersApi`、`injectInternal`、`deliveryGate`**——那些在 Persona 的 `CoreApi` 上。
    所以现在的 5 秒轮询 + `setTimeout` 是**正常做法**，不是临时方案；跨重启的计划得自己存
