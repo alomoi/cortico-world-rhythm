@@ -1,11 +1,11 @@
-# 作息（Rhythm）离线安装包
+﻿# 作息（Rhythm）离线安装包
 
 适合不能联网的机器。不需要 npm、不需要下载依赖。
 
 ## 包里有什么
 
 ```
-cortico-world-rhythm-1.0.5-offline.tgz   插件本体
+cortico-world-rhythm-1.0.6-offline.tgz   插件本体
 install.bat                              Windows 双击安装
 install.ps1                              PowerShell 安装（可选）
 ```

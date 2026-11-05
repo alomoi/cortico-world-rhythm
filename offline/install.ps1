@@ -1,4 +1,4 @@
-# 作息（Rhythm）离线安装脚本（PowerShell）
+﻿# 作息（Rhythm）离线安装脚本（PowerShell）
 # 用法：右键「使用 PowerShell 运行」，或在终端执行：
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 
@@ -10,7 +10,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $app 'Coopanion.exe'))) {
   exit 1
 }
 
-$tgz = Join-Path $PSScriptRoot 'cortico-world-rhythm-1.0.5-offline.tgz'
+$tgz = Join-Path $PSScriptRoot 'cortico-world-rhythm-1.0.6-offline.tgz'
 if (-not (Test-Path -LiteralPath $tgz)) {
   Write-Host "[X] 没找到安装包：$tgz" -ForegroundColor Red
   Read-Host '按回车退出'
