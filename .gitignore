@@ -1,3 +1,7 @@
-node_modules/
+﻿node_modules/
 .scratch/
 *.tgz
+# 只留在本机的私人文档
+docs/bigfatfish.md
+docs/handoff.md
+dist/

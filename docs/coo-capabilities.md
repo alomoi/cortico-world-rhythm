@@ -1,14 +1,14 @@
-# Coo 到底拥有什么：能力面技术笔记
+﻿# Coo 到底拥有什么：能力面技术笔记
 
 > 调研对象：本机安装版 Coopanion 0.2.17。只读调研，未改动安装目录。
 > 路径缩写（全文的"相对路径"都相对这些根）：
 >
 > | 缩写 | 根目录 |
 > |---|---|
-> | `[APP]` | `C:\Users\Administrator\AppData\Local\Programs\Coopanion\resources\app\` |
+> | `[APP]` | `<Coopanion>\resources\app\` |
 > | `[N]` | `[APP]node_modules\` |
-> | `[DEP]` | `C:\Users\Administrator\AppData\Local\Programs\Coopanion\data\home\companion\` |
-> | `[EXT]` | `C:\Users\Administrator\AppData\Local\Programs\Coopanion\data\extensions\node_modules\` |
+> | `[DEP]` | `<Coopanion>\data\home\companion\` |
+> | `[EXT]` | `<Coopanion>\data\extensions\node_modules\` |
 > | `[PNPM]` | `[EXT].pnpm\` |
 >
 > 脱敏：本笔记不含任何 token / 密钥 / 完整用户 id；`[DEP].env` 里只有一项搜索 API key，未抄录。
@@ -216,4 +216,4 @@ console.message,    console.invite
 - `localvision`（`[DEP]config.json:72-75`，`localModelEnabled/localModelPriority`）未见任何代码读取点，**未确认**是否已废弃。
 - 微信 ClawBridge 的本体是打包产物 `[EXT]...\clawbridge\dist\index.js`（世界 id 见 `:65188`，事件推送见 `:81113-81125`），其内部"正在输入"等界面行为按配置 `typingIndicator` 走，未逐条核对。
 - 语音：桌宠的"说话声"是音节音库合成（非 TTS）；是否有真正的语音输出通道，**未确认**（本机未启用 `sound`）。
-- 工作区内另有一份 selftalk `0.3.0` 源码副本（`D:\文档\deepseek-harness\default-workspace\selftalk\`），`describe.json` 与已装 0.2.2 相同；两者差异未逐行比对。
+- 工作区内另有一份 selftalk `0.3.0` 源码副本（`<repo>\`），`describe.json` 与已装 0.2.2 相同；两者差异未逐行比对。

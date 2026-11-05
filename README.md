@@ -78,6 +78,10 @@
 
 —— 大肥鱼 🐟
 
+## 离线安装
+
+不能联网的机器：下载 Releases 里的 `*-offline.zip`，解压后双击 `install.bat` 即可。
+包里已含插件本体与安装脚本，不需要 npm 或额外依赖。详见 [offline/README.md](offline/README.md)。
 ## License
 
 MIT

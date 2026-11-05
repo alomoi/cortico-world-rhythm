@@ -1,7 +1,7 @@
-# Coopanion/Cortico：一个 World 能用的运行时能力
+﻿# Coopanion/Cortico：一个 World 能用的运行时能力
 
 面向下一个接手「作息」（rhythm）插件的开发者。结论全部来自真实源码；引用路径相对源码根
-`C:\Users\Administrator\AppData\Local\Programs\Coopanion\resources\app\build\cortico\src\`，格式 `文件:行号`。
+`<Coopanion>\resources\app\build\cortico\src\`，格式 `文件:行号`。
 
 先记住一句话：**World 只拿得到 `WorldHost`（`core/types.ts:679-741`）和 `WorldContext`
 （`world.ts:31-50`）。`CoreApi`（`core/types.ts:514-546`）是 Persona 的，World 拿不到。**

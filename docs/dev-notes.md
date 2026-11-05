@@ -17,8 +17,8 @@
 
 | 东西 | 位置 |
 |---|---|
-| 本 fork（唯一可写目录） | `D:\文档\deepseek-harness\default-workspace\selftalk\` |
-| Coopanion 安装目录 | `%LOCALAPPDATA%\Programs\Coopanion`（只读） |
+| 本 fork（唯一可写目录） | `<repo>\` |
+| Coopanion 安装目录 | `<Coopanion>`（只读） |
 | 框架/宿主源码 | `<安装目录>\resources\app\build\cortico\src\`（只读，TypeScript 原文） |
 | 已装扩展 | `<安装目录>\data\extensions\node_modules\`（只读，除非主人同意装包） |
 | 部署目录 | `<安装目录>\data\home\companion\`（`config.json`、`deployment.json`） |
@@ -254,7 +254,7 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 
 ```powershell
 # 1) 打包
-cd D:\文档\deepseek-harness\default-workspace\selftalk
+cd <repo>
 # 用自带 pnpm：$app = "$env:LOCALAPPDATA\Programs\Coopanion"
 # $env:ELECTRON_RUN_AS_NODE='1'
 # Start-Process "$app\Coopanion.exe" -ArgumentList @("$app\resources\app\node_modules\pnpm\bin\pnpm.cjs",'pack') -NoNewWindow -Wait
