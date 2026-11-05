@@ -6,7 +6,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "Coopanion 的作息扩展：让桌宠有自己的生活节律——什么时候安静、什么时候叫醒、睡觉与做梦。fork 自 cortico-world-selftalk 0.2.2。",
+  "description": "Coopanion 的作息扩展：让桌宠有自己的生活节律——什么时候主动搭话、什么时候安静、什么时候睡觉和休息、有时还会做梦。fork 自 cortico-world-selftalk 0.2.2。",
   "keywords": [
     "cortico-world",
     "cortico",
