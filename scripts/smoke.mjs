@@ -1589,8 +1589,48 @@ console.log('dream: off, no plan; disturbed, cancelled:');
   advance(1);
   addEvent(h, 'clawbridge.message');
   h.world.tick();
-  check('being woken cancels the dream', h.world.state.sleep.dreamPlan === null);
+  check('a bedtime reply does not cancel the dream', h.world.state.sleep.dreamPlan !== null);
+  advance(299);
+  h.world.tick();
+  check('the dream still happens after enough quiet', h.hints.some((x) => x.spec.meta.kind === 'dream'));
   await h.world.stop();
+
+  // 离梦太近的打扰：顺延到安静满 60 分钟
+  at('2026-11-02T21:50:00+08:00');
+  const d = harness({ sleepWindow: '22:00-08:00', dreamEnabled: true, dreamChance: 1, dreamAfterMinutes: 60 });
+  let n = 0;
+  const seqD = [0.1, 0.5, 0];
+  d.world.opts.random = () => seqD[Math.min(n++, seqD.length - 1)];
+  await boot(d);
+  advance(10);
+  d.world.tick();
+  advance(290); // 02:50
+  addEvent(d, 'clawbridge.message');
+  d.world.tick();
+  advance(10); // 03:00，安静只有 10 分钟
+  d.world.tick();
+  const delayed = d.world.state.sleep.dreamPlan;
+  check('a late interruption delays the dream', delayed !== null && new Date(delayed.at).getHours() === 3 && new Date(delayed.at).getMinutes() === 50, JSON.stringify(delayed));
+  advance(50);
+  d.world.tick();
+  check('the delayed dream fires at 03:50', d.hints.some((x) => x.spec.meta.kind === 'dream'));
+  await d.world.stop();
+
+  // 窗口放不下：跳过
+  at('2026-11-02T21:50:00+08:00');
+  const e = harness({ sleepWindow: '22:00-08:00', dreamEnabled: true, dreamChance: 1, dreamAfterMinutes: 60 });
+  let k = 0;
+  const seqE = [0.1, 0.5, 0];
+  e.world.opts.random = () => seqE[Math.min(k++, seqE.length - 1)];
+  await boot(e);
+  advance(10);
+  e.world.tick();
+  advance(510); // 06:30，离窗口结束只剩 90 分钟
+  addEvent(e, 'clawbridge.message');
+  e.world.tick();
+  check('no room to delay means the night is skipped', e.world.state.sleep.dreamPlan === null);
+  check('and no dream hint is sent', !e.hints.some((x) => x.spec.meta.kind === 'dream'));
+  await e.world.stop();
 }
 
 console.log('dream: an older messages.json gets the new keys:');

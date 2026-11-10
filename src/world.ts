@@ -44,7 +44,7 @@ import { detectPresence, UNKNOWN_PRESENCE, type Presence } from './presence.ts';
 import { appendDebugLine, pluginVersion, writeDiagnostics } from './diagnostics.ts';
 import { loadState, localDayKey, saveState, stateFilePath, writeJsonAtomic, type RhythmState } from './state.ts';
 import { uiText, type LampInfo } from './ui-text.ts';
-import { formatClock, matchWindow, minutesOfDay, parseWindowList, type ClockWindow } from './windows.ts';
+import { formatClock, matchWindow, minutesOfDay, minutesUntilWindowEnd, parseWindowList, type ClockWindow } from './windows.ts';
 
 /** 叫醒事件的类型。 */
 export const NUDGE_TYPE = 'rhythm.nudge';
@@ -1033,7 +1033,12 @@ export class RhythmWorld implements World {
     const duration = ((window.end - window.start) + 1440) % 1440;
     if (duration <= limits.dreamAfterMinutes + 60) return;
     const random = this.opts.random ?? Math.random;
-    if (random() >= limits.dreamChance) return;
+    const chance = limits.dreamChance;
+    const roll = random();
+    if (roll >= chance) {
+      this.host?.log.info('作息:今夜不做梦', { roll: Number(roll.toFixed(3)), chance });
+      return;
+    }
     const nowMinute = minutesOfDay(now, this.opts.timezone);
     const earliest = window.start + limits.dreamAfterMinutes;
     const latest = window.start + duration - 60;
@@ -1044,10 +1049,19 @@ export class RhythmWorld implements World {
     const rawType = types[Math.min(types.length - 1, Math.floor(random() * types.length))] ?? '梦';
     const type = fillTemplate(rawType, { user: this.opts.ownerName() || (this.opts.language() === 'zh' ? 'ta' : 'the person') });
     this.state.sleep.dreamPlan = { at: now + delta * 60_000, type };
-    this.host?.log.info('作息:安排了一场梦', { at: new Date(this.state.sleep.dreamPlan.at).toISOString(), type });
+    this.host?.log.info('作息:安排了一场梦', {
+      at: new Date(this.state.sleep.dreamPlan.at).toISOString(),
+      type,
+      roll: Number(roll.toFixed(3)),
+      chance,
+    });
   }
 
-  /** 到点做梦：只投一条提示，不计数、不进退避；正文在回合结束时抓。 */
+  /**
+   * 到点做梦：只投一条提示，不计数、不进退避。
+   * 不再因为「睡眠中有互动」直接取消，而是看梦到点之前是否安静了 `dreamAfterMinutes`；
+   * 不够就顺延到安静满足的时刻（窗口放不下才跳过）。
+   */
   private maybeDream(now: number, limits: Limits): void {
     const plan = this.state.sleep.dreamPlan;
     if (!plan || now < plan.at) return;
@@ -1057,11 +1071,35 @@ export class RhythmWorld implements World {
       return;
     }
     if (limits.onlyWhenIdle && this.phaseState !== 'idle') return;
+
+    const quietMinutes = Math.max(0, (now - this.lastActivitySeen) / 60_000);
+    if (quietMinutes < limits.dreamAfterMinutes) {
+      const windowNow = this.currentWindow(now);
+      const needDelay = Math.ceil((this.lastActivitySeen + limits.dreamAfterMinutes * 60_000 - now) / 60_000);
+      const maxDelay = windowNow
+        ? minutesUntilWindowEnd(minutesOfDay(now, this.opts.timezone), windowNow.window) - 60
+        : -1;
+      if (windowNow && needDelay > 0 && needDelay <= maxDelay) {
+        const at = this.lastActivitySeen + limits.dreamAfterMinutes * 60_000;
+        this.state.sleep.dreamPlan = { at, type: plan.type };
+        this.host?.log.info('作息:梦顺延到安静满足', {
+          quietMinutes: Math.floor(quietMinutes),
+          at: new Date(at).toISOString(),
+        });
+        this.persist();
+      } else {
+        this.state.sleep.dreamPlan = null;
+        this.host?.log.info('作息:今夜梦跳过（安静不够且窗口放不下）', { quietMinutes: Math.floor(quietMinutes) });
+        this.persist();
+      }
+      return;
+    }
+
     this.state.sleep.dreamPlan = null;
     this.state.sleep.dreams.push({ at: now, type: plan.type, text: '' });
     this.diag('做梦', { type: plan.type });
     this.sendHint('dream', now, { type: plan.type, diary: limits.dreamDiary, date: this.fullStamp(now) });
-    this.host?.log.info('作息:做梦', { type: plan.type, phase: this.phaseState });
+    this.host?.log.info('作息:做梦', { type: plan.type, phase: this.phaseState, quietMinutes: Math.floor(quietMinutes) });
     this.persist();
   }
 
@@ -1078,10 +1116,7 @@ export class RhythmWorld implements World {
     const previous = this.lastActivitySeen;
     if (latest.at > previous) this.lastActivitySeen = latest.at;
     if (!latest.type) return;
-    if (this.state.sleep.dreamPlan) {
-      this.state.sleep.dreamPlan = null;
-      this.host?.log.debug('作息:梦被吵醒取消');
-    }
+
     // 有人来找它：无论这一下是否计一次「被吵醒」，退避都从头开始。
     this.state.unanswered = 0;
     this.attempt = null;
@@ -1531,6 +1566,10 @@ export class RhythmWorld implements World {
         wokeCount: this.state.sleep.wokeCount,
         lastWokeAt: this.state.sleep.lastWokeAt,
         lastWokeBy: this.state.sleep.lastWokeBy,
+        dreamPlan: this.state.sleep.dreamPlan
+          ? { at: new Date(this.state.sleep.dreamPlan.at).toISOString(), type: this.state.sleep.dreamPlan.type }
+          : null,
+        dreams: this.state.sleep.dreams.length,
       },
       today: { nudges: this.state.nudgesToday, cap: limits.dailyCap },
       speak: { channels: [...this.channelPrefixes].sort(), unanswered: this.state.unanswered },
