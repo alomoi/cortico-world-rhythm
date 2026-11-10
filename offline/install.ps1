@@ -10,7 +10,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $app 'Coopanion.exe'))) {
   exit 1
 }
 
-$tgz = Join-Path $PSScriptRoot 'cortico-world-rhythm-1.0.7-offline.tgz'
+$tgz = Join-Path $PSScriptRoot 'cortico-world-rhythm-1.0.8-offline.tgz'
 if (-not (Test-Path -LiteralPath $tgz)) {
   Write-Host "[X] 没找到安装包：$tgz" -ForegroundColor Red
   Read-Host '按回车退出'

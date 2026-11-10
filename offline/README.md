@@ -5,7 +5,7 @@
 ## 包里有什么
 
 ```
-cortico-world-rhythm-1.0.7-offline.tgz   插件本体
+cortico-world-rhythm-1.0.8-offline.tgz   插件本体
 install.bat                              Windows 双击安装
 install.ps1                              PowerShell 安装（可选）
 ```
