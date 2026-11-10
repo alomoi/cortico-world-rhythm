@@ -129,6 +129,7 @@
 | v1.0.5 | 2026-11-05 | npm 发布 + GitHub Release；从 npm 安装验证 |
 | v1.0.6 | 2026-11-05 | 市场简介修正；npm latest + GitHub Release；从 npm 安装验证 |
 | v1.0.7 | 2026-11-05 | 锁屏/空闲互斥与措辞；npm latest + GitHub Release；从 npm 安装验证 |
+| v1.0.8 | 2026-11-10 | 做梦安静检查与顺延、掷骰日志、status 计划；npm latest + GitHub Release |
 ## 5. 一句话纪律
 
 > **测试是验证插件，不是训练桌宠。** 任何会反复触发它说话的测试手段（缩短间隔、反复戳、
