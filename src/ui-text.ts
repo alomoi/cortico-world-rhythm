@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 人读的界面文案（World 名、配置组标题与说明、状态灯），中文与英文两版。
  * 与模型读到的正文（model-text.ts）分开：这里只给控制台看。
  */
@@ -67,6 +67,8 @@ export interface RhythmUi {
   debugDescription: string;
   sleepHintTitle: string;
   sleepHintDescription: string;
+  bedtimeGraceTitle: string;
+  bedtimeGraceDescription: string;
   wakeHintTitle: string;
   wakeHintDescription: string;
   wakeGapTitle: string;
@@ -134,7 +136,7 @@ const zh: RhythmUi = {
   configBasicTitle: '基础作息',
   configBasicDescription: '多久叫醒一次、一段安静里最多叫几次、一天的总上限。',
   configSleepTitle: '睡眠与休息',
-  configSleepDescription: '睡觉与休息的时段，以及「该睡了 / 该醒了」两条提示。',
+  configSleepDescription: '睡觉与休息的时段，以及「准备睡觉 / 睡着了 / 该醒了」几条提示。',
   configWillingnessTitle: '搭话意愿',
   configWillingnessDescription: '主动搭话没人接时，慢慢拉长下次叫醒；你一对话就恢复。',
   configDreamTitle: '做梦',
@@ -167,7 +169,9 @@ const zh: RhythmUi = {
   willingnessHintTitle: '递减期间加一句情绪提示',
   willingnessHintDescription: '按未回应次数依次递进：担心 → 寂寞 → 失落；只给信息，怎么应对由桌宠决定。',
   sleepHintTitle: '睡眠时段给桌宠提示',
-  sleepHintDescription: '到点发一句「该睡了」、早上发一句「该醒了」，让桌宠自己决定用不用 pet_act 躺下或站起来。文案在 data/rhythm/messages.json 里改。只在启用了睡眠时段时生效。',
+  sleepHintDescription: '到点先发一句「该准备睡觉了」（留出说晚安的余地），隔一段宽限期再发「睡着了」，早上发一句「该醒了」，让桌宠自己决定用不用 pet_act 躺下或站起来。文案在 data/rhythm/messages.json 里改。只在启用了睡眠时段时生效。',
+  bedtimeGraceTitle: '上床到入睡的宽限期（分钟）',
+  bedtimeGraceDescription: '「该准备睡觉了」之后隔多少分钟才真正入睡；这几分钟里桌宠可以正常道晚安、收尾，不算被吵醒，也还没开始做梦。缺省 20 分钟；0 表示两段合成一段（旧行为）。',
   wakeHintTitle: '被吵醒时提示桌宠',
   wakeHintDescription: '睡眠时段里有人来找桌宠时，搭着这一轮给桌宠一句「你被吵醒了」，由桌宠自己决定要不要有点起床气。超过设置的「提示保鲜期」没搭上车就作废，不会事后突然冒出来。',
   wakeGapTitle: '同一场打扰的合并间隔',
@@ -249,7 +253,7 @@ const en: RhythmUi = {
   configBasicTitle: 'Wake-up basics',
   configBasicDescription: 'How often it wakes up, how many tries per quiet stretch, and the daily cap.',
   configSleepTitle: 'Sleep & rest',
-  configSleepDescription: 'Sleep and rest windows, plus the bedtime and wake-up lines.',
+  configSleepDescription: 'Sleep and rest windows, plus the bedtime, fall-asleep and wake-up lines.',
   configWillingnessTitle: 'Talking willingness',
   configWillingnessDescription: 'Unanswered outreach makes the next wake-up later; a conversation resets it.',
   configDreamTitle: 'Dreaming',
@@ -282,7 +286,9 @@ const en: RhythmUi = {
   willingnessHintTitle: 'Add a feeling line while slowing down',
   willingnessHintDescription: 'Adds a progressive line: worried, then lonely, then down. Information only; how to react is the bot\'s decision.',
   sleepHintTitle: 'Sleep messages to the bot',
-  sleepHintDescription: 'One "go to sleep" at the start of the window and one "wake up" at the end, so the bot may lie down or stand up with pet_act. Edit the wording in data/rhythm/messages.json. Only active when a sleep window is set.',
+  sleepHintDescription: 'A "get ready for bed" line when the window starts (leaving room to say goodnight), a "you fall asleep" line after the grace period, and a "you woke up" line in the morning, so the bot may lie down or stand up with its own action. Edit the wording in data/rhythm/messages.json. Only active when a sleep window is set.',
+  bedtimeGraceTitle: 'Grace period before falling asleep (minutes)',
+  bedtimeGraceDescription: 'Minutes between "get ready for bed" and actually falling asleep. During it the bot can say goodnight normally: it is not counted as interrupted and no dream starts yet. Default 20; 0 merges the two into one (old behaviour).',
   wakeHintTitle: 'Tell the bot it was woken',
   wakeHintDescription: 'When someone talks to the bot during the sleep window, a "you were woken up" line rides along with that turn; being grumpy is its own call. Dropped if it cannot join within the configured hint freshness, so it never shows up late.',
   wakeGapTitle: 'Merge window for one interruption',

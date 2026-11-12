@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 作息 World：一段时间没人跟 Coo 说话，就把它叫醒一次，让它自己决定开不开口、
  * 先用哪个工具、还是什么都不说（end_turn）。叫醒靠一条 internal 事件投递，正文由
  * model-text.ts 按模型文本语言给；事件以 flush 投递，空闲的主循环收到即开始一轮。
@@ -67,6 +67,12 @@ const SELF_SUFFIX = '.self';
 /** 「被吵醒」提示的保鲜期由配置给（`wakeHintSeconds`，缺省 90 秒），超过就作废。 */
 const DEFAULT_WAKE_HINT_SECONDS = 90;
 
+/**
+ * 上床到入睡的宽限期（分钟）：这几分钟里桌宠可以正常道晚安，不算被吵醒、也还没开始做梦。
+ * 人从躺下到睡着通常 15–30 分钟，取 20。
+ */
+const DEFAULT_BEDTIME_GRACE_MINUTES = 20;
+
 /** 回执里出现这些字样就当成「没发出去」。 */
 const FAILURE_MARKERS: readonly string[] = ['失败', '过期', '未连接', '没发出去', '发送失败', 'failed', 'expired'];
 
@@ -128,6 +134,7 @@ interface Limits {
   willingnessHint: boolean;
   skipChance: number;
   sleepHint: boolean;
+  bedtimeGraceMinutes: number;
   wakeHint: boolean;
   wakeGapMinutes: number;
   wakeHintSeconds: number;
@@ -173,6 +180,8 @@ export class RhythmWorld implements World {
   private restWindows: ClockWindow[] = [];
   /** 上一拍是否在睡眠/休息时段里；用来发现「刚睡醒」与进入时发提示。 */
   private lastWindow: 'sleep' | 'rest' | null = null;
+  /** 今夜宽限期的截止时刻（epoch ms）；0 表示今夜不分两段（或还没进入睡眠时段）。 */
+  private graceDeadline = 0;
   /** 概率跳过时压制到这一刻（epoch ms）。 */
   private suppressedUntil = 0;
   /**
@@ -292,11 +301,13 @@ export class RhythmWorld implements World {
     this.lastWindow = opening?.kind ?? null;
     if (opening?.kind === 'sleep') {
       // 重启时已经在睡眠时段里：不补发「该睡了」，但把这一夜记成已发，免得下次进入又发。
+      // 睡着了没有交给 tick 里的 maybeFallAsleep 判断（宽限期过了就直接算睡了）。
       const key = this.nightKeyOf(opening.window, now);
       if (this.state.sleep.nightKey !== key) {
         this.state.sleep = {
           nightKey: key,
           sleepHintSent: true,
+          asleepAt: null,
           wakeHintSent: false,
           wokeCount: 0,
           lastWokeAt: null,
@@ -320,7 +331,8 @@ export class RhythmWorld implements World {
       rounds: this.rounds,
       stretchAlive,
       inWindow: this.lastWindow,
-      wokeCount: this.state.sleep.wokeCount,
+      asleepAt: this.state.sleep.asleepAt,
+      bedtimeGraceMinutes: limits.bedtimeGraceMinutes,
       lastNudgeAt: this.lastNudgeAt > 0 ? new Date(this.lastNudgeAt).toISOString() : null,
       quietSince: new Date(this.lastActivitySeen).toISOString(),
     });
@@ -658,6 +670,7 @@ export class RhythmWorld implements World {
       debug: cfg.debug === true,
       skipChance: numberIn(cfg.skipChance, 0, 0, 1),
       sleepHint: cfg.sleepHint !== false,
+      bedtimeGraceMinutes: Math.floor(numberIn(cfg.bedtimeGraceMinutes, DEFAULT_BEDTIME_GRACE_MINUTES, 0, 60)),
       wakeHint: cfg.wakeHint !== false,
       wakeGapMinutes: Math.floor(numberIn(cfg.wakeGapMinutes, 30, 1, 240)),
       wakeHintSeconds: Math.floor(numberIn(cfg.wakeHintSeconds, DEFAULT_WAKE_HINT_SECONDS, 10, 300)),
@@ -869,12 +882,32 @@ export class RhythmWorld implements World {
 
     this.refreshWindows();
 
-    // 睡眠/休息时段：不主动叫醒；睡眠时段内还要数「被吵醒」。
+    // 睡眠/休息时段：不主动叫醒；睡眠时段里还要数「被吵醒」。
     const windowNow = this.currentWindow(now);
     if (windowNow) {
       if (this.lastWindow !== windowNow.kind) this.enterWindow(windowNow, now);
       if (windowNow.kind === 'sleep') {
-        this.countWakes(now, limits);
+        // 先看有没有人说话、再判是否到点：刚进窗口那一刻有人回晚安，也得先被记下来。
+        const latest = this.latestPersonActivity();
+        if (latest.at > this.lastActivitySeen) {
+          if (this.state.sleep.asleepAt) {
+            // 睡着了以后的动静才算「被吵醒」（countWakes 自己前移安静计时）。
+            this.countWakes(now, limits);
+          } else {
+            // 宽限期里有人说话：不算吵醒，但既然有人来，搭话意愿照常归零。
+            this.lastActivitySeen = latest.at;
+            this.state.unanswered = 0;
+            this.attempt = null;
+            if (this.handoffAt > 0 && latest.at > this.handoffAt) this.handoffAt = 0;
+            host.log.info('作息:宽限期内有人说话，不算吵醒', { by: latest.type });
+          }
+        }
+        if (!this.state.sleep.asleepAt) {
+          // 刚睡着的这一刻也已经到点（宽限期一结束）：先记下入睡，再接着判要不要做梦。
+          const before = this.state.sleep.asleepAt;
+          this.maybeFallAsleep(windowNow.window, now);
+          if (!before) return;
+        }
         this.maybeDream(now, limits);
       }
       return;
@@ -931,7 +964,7 @@ export class RhythmWorld implements World {
 
   // ── 睡眠时段 ────────────────────────────────────────────────────────────
 
-  /** 进入某个时段；进入睡眠时段时开一夜的会话并发「该睡了」。 */
+  /** 进入某个时段；进入睡眠时段时开一夜的会话并发「该准备睡觉了」。 */
   private enterWindow(windowNow: { kind: 'sleep' | 'rest'; window: ClockWindow }, now: number): void {
     const host = this.host;
     this.lastWindow = windowNow.kind;
@@ -942,10 +975,12 @@ export class RhythmWorld implements World {
     }
     const key = this.nightKeyOf(windowNow.window, now);
     const limits = this.limits();
+    const grace = this.graceMinutes(windowNow.window, limits);
     if (this.state.sleep.nightKey !== key) {
       this.state.sleep = {
         nightKey: key,
         sleepHintSent: false,
+        asleepAt: grace > 0 ? null : new Date(now).toISOString(),
         wakeHintSent: false,
         wokeCount: 0,
         lastWokeAt: null,
@@ -954,18 +989,81 @@ export class RhythmWorld implements World {
         dreamPlan: null,
         dreams: [],
       };
+      // 宽限期为 0（或窗口太短）就不分两段：直接说「睡着了」并当场开始这一夜。
       if (limits.sleepHint) {
-        this.sendHint('sleep', now);
+        this.sendHint(grace > 0 ? 'bedtime' : 'sleep', now);
         this.state.sleep.sleepHintSent = true;
       }
-      this.planDream(windowNow.window, now, limits);
+      this.graceDeadline = grace > 0 ? this.graceDeadlineFor(windowNow.window, now, grace) : now;
+      if (grace <= 0) this.planDream(windowNow.window, now, limits);
       this.persist();
     }
     host?.log.info('作息:进入睡眠时段', {
       night: key,
       until: formatClock(windowNow.window.end),
       hint: limits.sleepHint ? 'sent' : 'off',
+      graceMinutes: grace,
     });
+  }
+
+  /**
+   * 这一夜的宽限期（分钟）。
+   * 窗口太短（睡不满宽限期加 10 分钟）就不分两段：刚说完「睡着了」就醒，比不说更别扭。
+   */
+  private graceMinutes(window: ClockWindow, limits: Limits): number {
+    const grace = Math.max(0, Math.floor(limits.bedtimeGraceMinutes));
+    if (grace <= 0) return 0;
+    const duration = ((window.end - window.start) + 1440) % 1440;
+    return duration >= grace + 10 ? grace : 0;
+  }
+
+  /** 这一夜窗口开始的时刻（epoch ms），按部署时区算。 */
+  private windowStartAt(window: ClockWindow, nowMs: number): number {
+    const minute = minutesOfDay(nowMs, this.opts.timezone);
+    // 只往回拨「窗口开始到此刻」的分钟数，不碰「现在几点」——跨时区也不会算歪。
+    const elapsed = ((minute - window.start) + 1440) % 1440;
+    return nowMs - elapsed * 60_000;
+  }
+
+  /** 今夜宽限期的截止时刻；没有分两段则为 0。窗口中间重启也按窗口起点算，不推迟入睡。 */
+  private graceDeadlineFor(window: ClockWindow, now: number, grace: number): number {
+    if (grace <= 0) return 0;
+    return this.windowStartAt(window, now) + grace * 60_000;
+  }
+
+  /**
+   * 宽限期到点没有：到点就正式入睡。
+   * 截止时刻按「进入窗口那一刻 + 宽限期」算（`graceDeadline`），重启不会把它往后推。
+   */
+  private maybeFallAsleep(window: ClockWindow, now: number): void {
+    if (this.graceDeadline <= 0) {
+      // 重启后落在这个时段里：宽限期已过就直接入睡，还在里面就按窗口起点接着等。
+      const grace = this.graceMinutes(window, this.limits());
+      const deadline = this.graceDeadlineFor(window, now, grace);
+      if (grace <= 0 || (deadline > 0 && now >= deadline)) {
+        this.fallAsleep(window, now, now);
+        return;
+      }
+      this.graceDeadline = deadline;
+    }
+    if (now >= this.graceDeadline) this.fallAsleep(window, now, now);
+  }
+
+  /** 正式入睡：发「睡着了」，从这一刻起才做梦、才数被吵醒。 */
+  private fallAsleep(window: ClockWindow, asleepAt: number, now: number): void {
+    const host = this.host;
+    const limits = this.limits();
+    if (limits.sleepHint) this.sendHint('sleep', now);
+    this.state.sleep.asleepAt = new Date(asleepAt).toISOString();
+    // 宽限期里已经回应过的人，不该在刚睡着那一刻又算一次「被吵醒」。
+    this.state.sleep.lastCountedAt = this.state.sleep.lastCountedAt ?? new Date(asleepAt).toISOString();
+    this.planDream(window, now, limits);
+    host?.log.info('作息:正式入睡', {
+      night: this.state.sleep.nightKey,
+      asleepAt: new Date(asleepAt).toISOString(),
+      graceMinutes: this.graceMinutes(window, limits),
+    });
+    this.persist();
   }
 
   /** 离开时段；离开睡眠时段时发「该醒了」并收尾这一夜。 */
@@ -976,7 +1074,8 @@ export class RhythmWorld implements World {
     if (was === 'rest') {
       host?.log.info('作息:休息时段结束，安静计时重新开始', { quietMinutes: limits.quietMinutes });
     } else {
-      if (limits.sleepHint && this.state.sleep.sleepHintSent && !this.state.sleep.wakeHintSent) {
+      // 只在真的说过「睡着了」之后，早上才说「该醒了」；只是预告过就不提，免得一觉没睡成还报喜。
+      if (limits.sleepHint && this.state.sleep.asleepAt && !this.state.sleep.wakeHintSent) {
         const extra: string[] = [];
         const dreams = this.state.sleep.dreams;
         const language = this.opts.language();
@@ -999,6 +1098,7 @@ export class RhythmWorld implements World {
       this.state.sleep = {
         nightKey: null,
         sleepHintSent: false,
+        asleepAt: null,
         wakeHintSent: false,
         wokeCount: 0,
         lastWokeAt: null,
@@ -1097,10 +1197,11 @@ export class RhythmWorld implements World {
 
     this.state.sleep.dreamPlan = null;
     this.state.sleep.dreams.push({ at: now, type: plan.type, text: '' });
+    // 先落盘再投提示：宿主收到提示就可能立刻结束这一轮，晚一步写就丢了这条记录。
+    this.persist();
     this.diag('做梦', { type: plan.type });
     this.sendHint('dream', now, { type: plan.type, diary: limits.dreamDiary, date: this.fullStamp(now) });
     this.host?.log.info('作息:做梦', { type: plan.type, phase: this.phaseState, quietMinutes: Math.floor(quietMinutes) });
-    this.persist();
   }
 
   /**
@@ -1111,11 +1212,11 @@ export class RhythmWorld implements World {
     const host = this.host;
     if (!host) return;
     const latest = this.latestPersonActivity();
-    if (latest.at === 0) return;
+    if (latest.at === 0 || !latest.type) return;
     // 上一条人侧事件的时刻（更新前）；用来判断「两次说话之间是不是真的安静了」。
     const previous = this.lastActivitySeen;
-    if (latest.at > previous) this.lastActivitySeen = latest.at;
-    if (!latest.type) return;
+    const fresh = latest.at > previous;
+    if (fresh) this.lastActivitySeen = latest.at;
 
     // 有人来找它：无论这一下是否计一次「被吵醒」，退避都从头开始。
     this.state.unanswered = 0;
@@ -1126,6 +1227,8 @@ export class RhythmWorld implements World {
     const countedAt = this.state.sleep.lastCountedAt ? Date.parse(this.state.sleep.lastCountedAt) : 0;
     // 第一场打扰一定算；之后只有「上一次说话已经是 gap 分钟以前」才算新的一次。
     // 用 previous 而不是 countedAt：连续聊天时上一条就在几分钟前，不会凑满 30 分钟又记一次。
+    // 没有新动静时（同一场打扰的后续几拍）也不重复计入。
+    if (!fresh) return;
     if (countedAt > 0 && latest.at - previous < gapMs) return;
 
     this.state.sleep.wokeCount += 1;
@@ -1561,6 +1664,8 @@ export class RhythmWorld implements World {
       debug: limits.debug,
       sleep: {
         active: sleeping,
+        phase: sleeping ? (this.state.sleep.asleepAt ? 'asleep' : 'bedtime') : null,
+        asleepAt: this.state.sleep.asleepAt,
         window: sleeping && windowNow ? `${formatClock(windowNow.window.start)}-${formatClock(windowNow.window.end)}` : null,
         endsAt: sleeping && windowNow ? formatClock(windowNow.window.end) : null,
         wokeCount: this.state.sleep.wokeCount,

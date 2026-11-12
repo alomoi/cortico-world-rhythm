@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * 行为冒烟测试：不需要 Coopanion，用假宿主与假时钟驱动 World 的计时逻辑。
  *
@@ -137,6 +137,11 @@ function addEvent(h, type, { origin = 'external', at = clock, meta } = {}) {
     text: type,
     meta,
   });
+}
+
+/** 读公开状态文件（status.json），方便直接断言对外暴露的字段。 */
+function statusOf(h) {
+  return JSON.parse(readFileSync(join(h.dir, 'deployment', 'data', 'rhythm', 'status.json'), 'utf8'));
 }
 
 const advance = (minutes) => { clock += minutes * MINUTE; };
@@ -963,18 +968,80 @@ console.log('sleep messages:');
 
   advance(10); // 22:00
   h.world.tick();
-  check('bedtime hint is sent once', h.hints.length === 1 && h.hints[0].spec.meta.kind === 'sleep');
+  check('bedtime hint is sent once', h.hints.length === 1 && h.hints[0].spec.meta.kind === 'bedtime', h.hints.map((x) => x.spec.meta.kind).join(','));
   check('bedtime hint carries the local time', String(h.hints[0].spec.render()).includes('22:00'));
   check('bedtime hint uses flush', h.hints[0].opts?.trigger === 'flush');
 
-  advance(9 * 60); // 07:00
+  advance(10); // 22:10，还在宽限期里
   h.world.tick();
-  check('no wake hint while still asleep', h.hints.length === 1);
+  check('no sleep hint inside the grace period', h.hints.length === 1, h.hints.map((x) => x.spec.meta.kind).join(','));
+
+  advance(10); // 22:20，正式入睡
+  h.world.tick();
+  check('the sleep hint arrives when the grace period ends', h.hints.length === 2 && h.hints[1].spec.meta.kind === 'sleep');
+
+  advance(9 * 60); // 07:20
+  h.world.tick();
+  check('no wake hint while still asleep', h.hints.length === 2);
 
   at('2026-11-03T08:00:00+08:00');
   h.world.tick();
-  check('wake hint is sent at the end of the window', h.hints.length === 2 && h.hints[1].spec.meta.kind === 'wake');
-  check('the bedtime hint is not repeated', h.hints.filter((x) => x.spec.meta.kind === 'sleep').length === 1);
+  check('wake hint is sent at the end of the window', h.hints.length === 3 && h.hints[2].spec.meta.kind === 'wake');
+  check('the bedtime hint is not repeated', h.hints.filter((x) => x.spec.meta.kind === 'bedtime').length === 1);
+  check('the sleep hint is not repeated', h.hints.filter((x) => x.spec.meta.kind === 'sleep').length === 1);
+  await h.world.stop();
+}
+
+console.log('bedtime grace: a good-night in the grace period is not a wake-up:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00' });
+  await boot(h);
+  advance(10); // 22:00 预告
+  h.world.tick();
+  advance(5); // 22:05 主人回了一句晚安
+  addEvent(h, 'clawbridge.message', { at: Date.parse('2026-11-02T22:05:00+08:00') });
+  h.world.tick();
+  check('saying good-night in the grace period is not counted', statusOf(h).sleep.wokeCount === 0);
+  check('no woken hint in the grace period', !h.hints.some((x) => x.spec.meta.kind === 'woken'));
+  check('the grace period does not restart on talk', h.hints.length === 1);
+
+  advance(15); // 22:20
+  h.world.tick();
+  check('the sleep hint still lands on schedule', h.hints.length === 2 && h.hints[1].spec.meta.kind === 'sleep');
+  check('the status names the phase', statusOf(h).sleep.phase === 'asleep');
+  check('the status records when it fell asleep', Boolean(statusOf(h).sleep.asleepAt));
+
+  advance(30); // 22:35 睡着以后又来消息（距离上一句已经安静 30 分钟）
+  addEvent(h, 'clawbridge.message', { at: Date.parse('2026-11-02T22:35:00+08:00') });
+  h.world.tick();
+  check('a message after falling asleep counts once', statusOf(h).sleep.wokeCount === 1);
+  await h.world.stop();
+}
+
+console.log('bedtime grace: zero means one single hint:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00', bedtimeGraceMinutes: 0 });
+  await boot(h);
+  advance(10);
+  h.world.tick();
+  check('with no grace the sleep hint goes out at once', h.hints.length === 1 && h.hints[0].spec.meta.kind === 'sleep', h.hints.map((x) => x.spec.meta.kind).join(','));
+  advance(60);
+  h.world.tick();
+  check('and it is sent only once', h.hints.length === 1);
+  check('the phase is asleep right away', statusOf(h).sleep.phase === 'asleep');
+  await h.world.stop();
+}
+
+console.log('bedtime grace: too short a window keeps one single hint:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-22:10' });
+  await boot(h);
+  advance(10);
+  h.world.tick();
+  check('a 10 minute window is not split in two', h.hints.length === 1 && h.hints[0].spec.meta.kind === 'sleep', h.hints.map((x) => x.spec.meta.kind).join(','));
   await h.world.stop();
 }
 
@@ -1015,19 +1082,22 @@ console.log('a restart inside the window does not re-send the bedtime hint:');
 
 console.log('counting wake-ups:');
 {
-  at('2026-11-02T22:05:00+08:00');
+  at('2026-11-02T21:55:00+08:00');
   const h = harness({ sleepWindow: '22:00-08:00', wakeGapMinutes: 30 });
   await boot(h);
+  advance(25);
+  h.world.tick();
+  advance(30);
   h.world.tick();
 
   advance(1);
   addEvent(h, 'qq.message');
   h.world.tick();
-  check('the first interruption counts once', h.world.state.sleep.wokeCount === 1);
+  check('the first interruption counts once', h.world.state.sleep.wokeCount === 1, JSON.stringify({ meta: h.hints.map((x) => x.spec.meta.kind), sleep: h.world.state.sleep }));
   check('one archived woke event', h.archived.filter((x) => x.event.type === 'rhythm.woke').length === 1);
   check('the archived record is not delivered', h.archived[0].opts?.deliver === false);
   check('a woken hint is queued', h.hints.filter((x) => x.spec.meta.kind === 'woken').length === 1);
-  check('the woken hint rides on piggyback', h.hints[0].opts?.trigger === 'piggyback');
+  check('the woken hint rides on piggyback', h.hints.filter((x) => x.spec.meta.kind === 'woken')[0]?.opts?.trigger === 'piggyback');
 
   advance(10); // 同一场聊天，30 分钟内
   addEvent(h, 'clawbridge.message');
@@ -1059,9 +1129,12 @@ console.log('counting wake-ups:');
 
 console.log('the woken hint expires:');
 {
-  at('2026-11-02T22:05:00+08:00');
+  at('2026-11-02T21:55:00+08:00');
   const h = harness({ sleepWindow: '22:00-08:00' });
   await boot(h);
+  advance(25);
+  h.world.tick();
+  advance(30);
   h.world.tick();
   advance(1);
   addEvent(h, 'qq.message');
@@ -1074,6 +1147,9 @@ console.log('the woken hint expires:');
 
   const short = harness({ sleepWindow: '22:00-08:00', wakeHintSeconds: 10 });
   await boot(short);
+  advance(25);
+  short.world.tick();
+  advance(30);
   short.world.tick();
   advance(1);
   addEvent(short, 'qq.message');
@@ -1091,12 +1167,14 @@ console.log('wakeHint can be turned off:');
   at('2026-11-02T22:05:00+08:00');
   const h = harness({ sleepWindow: '22:00-08:00', wakeHint: false });
   await boot(h);
+  advance(25);
   h.world.tick();
-  advance(1);
+  advance(30);
+  h.world.tick();
   addEvent(h, 'qq.message');
   h.world.tick();
   check('the wake-up is still counted', h.world.state.sleep.wokeCount === 1);
-  check('no woken hint when wakeHint is off', h.hints.length === 0);
+  check('no woken hint when wakeHint is off', !h.hints.some((x) => x.spec.meta.kind === 'woken'), h.hints.map((x) => x.spec.meta.kind + ':' + String(x.spec.render())).join('|'));
   await h.world.stop();
 }
 
@@ -1110,7 +1188,11 @@ console.log('editable messages file:');
   await boot(h);
   advance(10);
   h.world.tick();
-  check('custom wording is used', String(h.hints[0]?.spec.render()).includes('CUSTOM'));
+  advance(10);
+  h.world.tick();
+  advance(10);
+  h.world.tick();
+  check('custom wording is used', String(h.hints.find((x) => x.spec.meta.kind === 'sleep')?.spec.render()).includes('CUSTOM'));
   await h.world.stop();
 
   const fresh = harness();
@@ -1121,9 +1203,12 @@ console.log('editable messages file:');
 
 console.log('public status file:');
 {
-  at('2026-11-02T22:30:00+08:00');
+  at('2026-11-02T21:50:00+08:00');
   const h = harness({ sleepWindow: '22:00-08:00' });
   await boot(h);
+  advance(10); // 22:00 预告
+  h.world.tick();
+  advance(20); // 22:30 正式入睡之后
   h.world.tick();
   advance(1);
   addEvent(h, 'clawbridge.message');
@@ -1131,7 +1216,7 @@ console.log('public status file:');
   const status = JSON.parse(readFileSync(join(h.dir, 'deployment', 'data', 'rhythm', 'status.json'), 'utf8'));
   check('status says the bot is asleep', status.sleep.active === true);
   check('status reports when the window ends', status.sleep.endsAt === '08:00');
-  check('status reports the wake-up count', status.sleep.wokeCount === 1);
+  check('status reports the wake-up count', status.sleep.wokeCount === 1, JSON.stringify(status.sleep));
   check('status reports who woke it', status.sleep.lastWokeBy === 'clawbridge.message');
   await h.world.stop();
 }
@@ -1535,25 +1620,28 @@ console.log('dream: one nightly plan, the bot is asked to write the diary:');
   h.world.opts.random = () => seq[Math.min(n++, seq.length - 1)];
   h.world.opts.ownerName = () => '主人';
   await boot(h);
-  advance(10); // 22:00 入夜
+  advance(10); // 22:00 入夜（预告）
+  h.world.tick();
+  advance(20); // 22:20 正式入睡之后才掷骰
   h.world.tick();
   const plan = h.world.state.sleep.dreamPlan;
   check('a dream plan is rolled at bedtime', plan !== null, JSON.stringify(plan));
   check('the plan lands inside the window', plan !== null && new Date(plan.at).getHours() === 3, plan ? new Date(plan.at).toISOString() : '');
 
-  advance(300); // 03:00
+  advance(300); // 03:20
   h.world.tick();
+  const recorded = JSON.parse(JSON.stringify(h.world.state.sleep.dreams));
   const dreamHint = h.hints.find((x) => x.spec.meta.kind === 'dream');
   const dreamText = String(dreamHint?.spec.render());
   check('the dream hint is sent', Boolean(dreamHint));
-  check('it carries a dream type', dreamText.includes('【天马行空的】'), dreamText);
+  check('it carries a dream type', dreamText.includes('【天马行空的】'), dreamText + ' @@ asleepAt=' + String(h.world.state.sleep.asleepAt));
   check('it points at the diary path', dreamText.includes('partner/dreams.md'), dreamText);
   check('recording is mandatory and appended', dreamText.includes('必做') && dreamText.includes('追加写入'), dreamText);
   check('it asks for a themed dream fragment', dreamText.includes('梦境片段') && dreamText.includes('不要笼统写'), dreamText);
-  check('the heading carries the full date', /## 2026-11-03 周[一二三四五六日] 03:00/.test(dreamText), dreamText);
+  check('the heading carries the full date', /## 2026-11-03 周[一二三四五六日] 03:20/.test(dreamText), dreamText);
   check('no tool name is hardcoded', !dreamText.includes('pet_act'), dreamText);
   check('the plan is consumed', h.world.state.sleep.dreamPlan === null);
-  check('the dream record exists without captured text', h.world.state.sleep.dreams.length === 1 && h.world.state.sleep.dreams[0].text === '');
+  check('the dream record exists without captured text', recorded.length === 1 && recorded[0].text === '', JSON.stringify(recorded));
 
   at('2026-11-03T08:00:00+08:00');
   h.world.tick();
@@ -1584,6 +1672,8 @@ console.log('dream: off, no plan; disturbed, cancelled:');
   h.world.opts.random = () => seq[Math.min(m++, seq.length - 1)];
   await boot(h);
   advance(10);
+  h.world.tick();
+  advance(20);
   h.world.tick();
   check('a plan exists before the interruption', h.world.state.sleep.dreamPlan !== null);
   advance(1);
@@ -1623,9 +1713,9 @@ console.log('dream: off, no plan; disturbed, cancelled:');
   const seqE = [0.1, 0.5, 0];
   e.world.opts.random = () => seqE[Math.min(k++, seqE.length - 1)];
   await boot(e);
-  advance(10);
+  advance(30); // 22:20 睡着
   e.world.tick();
-  advance(510); // 06:30，离窗口结束只剩 90 分钟
+  advance(490); // 06:30，离窗口结束只剩 90 分钟
   addEvent(e, 'clawbridge.message');
   e.world.tick();
   check('no room to delay means the night is skipped', e.world.state.sleep.dreamPlan === null);

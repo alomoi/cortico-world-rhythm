@@ -1,10 +1,11 @@
-/**
+﻿/**
  * 发给桌宠的提示文案（「该睡了」「该醒了」「你被吵醒了」），独立成一个可编辑的 JSON 文件。
  *
  * 为什么单独放：这几句是「给 Coo 看的话」，调语气属于高阶玩法，但不适合塞进设置页的旋钮海洋。
  * 文件位置：`<dataDir>/rhythm/messages.json`，只在缺失时写入一份默认模板，**永不覆盖**用户的修改。
  *
- * 占位符：`{at}` 当地时刻（HH:MM）、`{by}` 打扰来源的事件类型、`{count}` 今夜第几次被吵醒。
+ * 睡眠分两段：`bedtime` 是上床预告（留出说晚安的余地），`sleep` 是真正入睡（躺好），`wake` 是早上醒来。
+ * 做梦是 `dream`，被吵醒是 `woken`。占位符：`{at}` 当地时刻、`{by}` 打扰来源、`{count}` 今夜第几次被吵醒。
  * 模板里写错占位符不会出错，替换不到就原样保留；文件坏了就退回内置默认并记一条 warn。
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -12,7 +13,7 @@ import { dirname, join } from 'node:path';
 
 export type MessageLanguage = 'zh' | 'en';
 
-export type HintKind = 'sleep' | 'wake' | 'woken' | 'dream';
+export type HintKind = 'bedtime' | 'sleep' | 'wake' | 'woken' | 'dream';
 
 export interface RhythmMessages {
   version: 1;
@@ -27,7 +28,8 @@ export const DEFAULT_MESSAGES: RhythmMessages = {
   version: 1,
   _note: '本文件可以自由修改。升级时只会补上缺失的键，不会覆盖你已经改过的内容；删掉本文件会按当前版本重新生成默认内容。',
   zh: {
-    sleep: '[{at}] [作息] 你的眼皮越来越重，到睡觉的时间了。\n想说话就用你平时的方式道个晚安；不想说话，就用一个能让你躺下的动作（比如睡眠）躺好。\n不管选哪种，做完就结束这一轮。',
+    bedtime: '[{at}] [作息] 你的眼皮越来越重，该准备睡觉了。\n想说话就用你平时的方式道个晚安，想做事就用工具，不想就结束这一轮。',
+    sleep: '[{at}] [作息] 一阵强烈的睡意袭来，你睡着了。\n用一个能让你躺下的动作（比如睡眠）躺好，做完就结束这一轮。',
     wake: '[{at}] [作息] 你伸了个懒腰，在睡眠中醒来，新的一天开始了。\n想说话就用你平时的方式打个招呼；不想说话，就用一个能让你站起来的动作（比如站立）起身。\n不管选哪种，做完就结束这一轮。',
     woken: '[{at}] [作息] 你刚才在睡觉，{user}（{by}）把你吵醒了（今夜第 {count} 次）。要不要带点起床气，你自己决定；不想理就结束这一轮。',
     dream: '[{at}] [作息] 你在熟睡中做了一个梦。梦境期间不要对外沟通、不要调用任何发送消息的工具、不要联系任何人；写日记文件不算对外沟通。\n生成一个【{type}】主题的梦境片段：包含场景、事件、角色（{user}、其他人或事物均可），不要笼统写「做了一个某某的梦」。\n【必做】只把下面两条分隔线之间的内容追加写入 {diary}（不存在就新建；只追加、不覆盖整篇；分隔线本身不要写）：\n=====模板开始=====\n## {date} · {type}梦\n一两行梦境内容；记不清细节就写当时的感受，不能为空。\n最后单独写一句当下的心情。\n=====模板结束=====\n写入完成后，保持睡姿继续睡，然后结束这一轮。',
@@ -40,7 +42,8 @@ export const DEFAULT_MESSAGES: RhythmMessages = {
     ],
   },
   en: {
-    sleep: '[{at}] [rhythm] Your eyelids are getting heavy; it is time to sleep.\nIf you want to talk, say goodnight in your usual way; if not, lie down with an action that lets you sleep.\nEither way, end this turn when you are done.',
+    bedtime: '[{at}] [rhythm] Your eyelids are getting heavy; it is time to get ready for bed.\nSay goodnight in your usual way if you want to talk, do something with your tools, or just end this turn.',
+    sleep: '[{at}] [rhythm] A wave of sleepiness washes over you; you fall asleep.\nLie down with an action that lets you sleep, then end this turn.',
     wake: '[{at}] [rhythm] You stretch and wake up from sleep; a new day begins.\nIf you want to talk, say hello in your usual way; if not, get up with an action that lets you stand.\nEither way, end this turn when you are done.',
     woken: '[{at}] [rhythm] You were asleep and {user} ({by}) woke you up (wake-up #{count} tonight). Being a little grumpy about it is up to you; ignore it and end the turn if you would rather not.',
     dream: '[{at}] [rhythm] You are fast asleep and having a dream. During the dream, do not talk to anyone, do not call any messaging tool, and do not contact anyone; writing the diary file does not count as talking.\nGenerate a {type}-themed dream fragment: include a scene, events and characters ({user}, other people or things are fine); do not just write "I had a dream".\n[MUST] Append only the content between the two separator lines below to {diary} (create it if missing; append only, never rewrite; do not write the separator lines themselves):\n=====TEMPLATE START=====\n## {date} · {type}\nOne or two lines about the dream; if the details are fuzzy, write how it felt. It cannot be empty.\nEnd with one separate line about how you feel right now.\n=====TEMPLATE END=====\nAfter writing, stay in your sleeping posture and keep sleeping, then end this turn.',
@@ -82,7 +85,7 @@ function normalize(raw: unknown): { messages: RhythmMessages; problems: string[]
       problems.push(`${language} must be an object`);
       continue;
     }
-    for (const kind of ['sleep', 'wake', 'woken', 'dream'] as const) {
+    for (const kind of ['bedtime', 'sleep', 'wake', 'woken', 'dream'] as const) {
       const value = (table as Record<string, unknown>)[kind];
       if (value === undefined) continue;
       if (!isText(value)) problems.push(`${language}.${kind} must be a non-empty string`);

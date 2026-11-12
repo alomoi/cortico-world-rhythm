@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 运行时状态的持久化。
  *
  * 为什么需要：上游把「这一段安静里已叫醒几次 / 上次叫醒在什么时候」全放在内存里，
@@ -37,8 +37,10 @@ export interface RhythmState {
 /** 一夜的睡眠会话。`nightKey` 是睡眠时段开始那天的日期。 */
 export interface SleepSession {
   nightKey: string | null;
-  /** 这一夜是否已经投过「该睡了」。 */
+  /** 这一夜是否已经投过「该睡了」（宽限期里的上床预告）。 */
   sleepHintSent: boolean;
+  /** 这一夜真正入睡的时刻（ISO）；还在宽限期里则 null。 */
+  asleepAt: string | null;
   /** 这一夜是否已经投过「该醒了」。 */
   wakeHintSent: boolean;
   /** 这一夜被吵醒几次（按合并间隔计）。 */
@@ -80,6 +82,7 @@ function emptySleep(): SleepSession {
   return {
     nightKey: null,
     sleepHintSent: false,
+    asleepAt: null,
     wakeHintSent: false,
     wokeCount: 0,
     lastWokeAt: null,
@@ -140,6 +143,7 @@ function sleepOf(value: unknown): SleepSession {
   return {
     nightKey: typeof bag.nightKey === 'string' ? bag.nightKey : null,
     sleepHintSent: boolOf(bag.sleepHintSent),
+    asleepAt: isoOf(bag.asleepAt),
     wakeHintSent: boolOf(bag.wakeHintSent),
     wokeCount: countOf(bag.wokeCount),
     lastWokeAt: isoOf(bag.lastWokeAt),

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 作息（Rhythm）World 的配置段与 WebUI 配置组。
  *
  * `worlds.rhythm` 是组装层给出的活引用：WebUI 在「模块」页改值时就地写进这个对象，
@@ -39,6 +39,11 @@ export interface RhythmConfigSection extends WorldSection {
   skipChance: number;
   /** 睡眠时段的「该睡了 / 该醒了」两条提示。 */
   sleepHint: boolean;
+  /**
+   * 入睡预告与真正入睡之间的宽限期（分钟）：这几分钟里可以正常道晚安，
+   * 不算「被吵醒」、也不开始做梦。0 表示两段合成一段（旧行为）。
+   */
+  bedtimeGraceMinutes: number;
   /** 睡眠时段被叫醒时，兜底给 Coo 一条「你被吵醒了」的提示（piggyback，迟到作废）。 */
   wakeHint: boolean;
   /** 同一场打扰的合并间隔：超过它再有人来才算「又被吵醒一次」。 */
@@ -110,6 +115,7 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   debug: false,
   skipChance: 0,
   sleepHint: true,
+  bedtimeGraceMinutes: 20,
   wakeHint: true,
   wakeGapMinutes: 30,
   wakeHintSeconds: 90,
@@ -224,6 +230,14 @@ function rhythmProperties(language: Language): Record<string, ConfigProperty> {
           type: 'boolean',
           title: t.sleepHintTitle,
           description: t.sleepHintDescription,
+          'x-hot': true,
+        },
+        [`worlds.${RHYTHM_ID}.bedtimeGraceMinutes`]: {
+          type: 'integer',
+          title: t.bedtimeGraceTitle,
+          description: t.bedtimeGraceDescription,
+          minimum: 0,
+          maximum: 60,
           'x-hot': true,
         },
         [`worlds.${RHYTHM_ID}.wakeHint`]: {
@@ -422,7 +436,7 @@ export function rhythmConfigGroups(language: Language): ConfigGroup[] {
       'onlyWhenIdle', 'activityIgnore', 'knownChannelsOnly',
     ]),
     group(`${owner}:sleep`, t.configSleepTitle, t.configSleepDescription, [
-      'sleepWindow', 'restWindows', 'sleepHint', 'wakeHint', 'wakeGapMinutes', 'wakeHintSeconds',
+      'sleepWindow', 'restWindows', 'sleepHint', 'bedtimeGraceMinutes', 'wakeHint', 'wakeGapMinutes', 'wakeHintSeconds',
     ]),
     group(`${owner}:willingness`, t.configWillingnessTitle, t.configWillingnessDescription, [
       'willingnessEnabled', 'willingnessMaxMinutes', 'willingnessHint',
