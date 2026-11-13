@@ -39,7 +39,7 @@ import { shortTime } from 'cortico/core/util.ts';
 import { rhythmConfigGroups, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
 import { fillTemplate, loadMessages, messagesPath, type HintKind } from './messages.ts';
 import { buildThread, sanitizeQuote } from './context.ts';
-import { nudgeText, type ModelLanguage, type NudgeQuote } from './model-text.ts';
+import { awaySentence, nudgeText, type ModelLanguage, type NudgeQuote } from './model-text.ts';
 import { detectPresence, UNKNOWN_PRESENCE, type Presence } from './presence.ts';
 import { appendDebugLine, pluginVersion, writeDiagnostics } from './diagnostics.ts';
 import { loadState, localDayKey, saveState, stateFilePath, writeJsonAtomic, type RhythmState } from './state.ts';
@@ -990,13 +990,11 @@ export class RhythmWorld implements World {
         dreams: [],
       };
       // 宽限期为 0（或窗口太短）就不分两段：直接说「睡着了」并当场开始这一夜。
-      if (limits.sleepHint) {
-        this.sendHint(grace > 0 ? 'bedtime' : 'sleep', now);
-        this.state.sleep.sleepHintSent = true;
-      }
       this.graceDeadline = grace > 0 ? this.graceDeadlineFor(windowNow.window, now, grace) : now;
       if (grace <= 0) this.planDream(windowNow.window, now, limits);
       this.persist();
+      if (limits.sleepHint) this.sendHintAfterProbe(grace > 0 ? 'bedtime' : 'sleep', now);
+      this.state.sleep.sleepHintSent = true;
     }
     host?.log.info('作息:进入睡眠时段', {
       night: key,
@@ -1053,7 +1051,6 @@ export class RhythmWorld implements World {
   private fallAsleep(window: ClockWindow, asleepAt: number, now: number): void {
     const host = this.host;
     const limits = this.limits();
-    if (limits.sleepHint) this.sendHint('sleep', now);
     this.state.sleep.asleepAt = new Date(asleepAt).toISOString();
     // 宽限期里已经回应过的人，不该在刚睡着那一刻又算一次「被吵醒」。
     this.state.sleep.lastCountedAt = this.state.sleep.lastCountedAt ?? new Date(asleepAt).toISOString();
@@ -1064,6 +1061,7 @@ export class RhythmWorld implements World {
       graceMinutes: this.graceMinutes(window, limits),
     });
     this.persist();
+    if (limits.sleepHint) this.sendHintAfterProbe('sleep', now);
   }
 
   /** 离开时段；离开睡眠时段时发「该醒了」并收尾这一夜。 */
@@ -1088,7 +1086,7 @@ export class RhythmWorld implements World {
         if (extra.length) {
           extra.push(language === 'zh' ? `要不要跟${this.opts.ownerName() || 'ta'}提，由你决定。` : 'Whether to tell the person is up to you.');
         }
-        this.sendHint('wake', now, {}, extra);
+        this.sendHintAfterProbe('wake', now, {}, extra);
         this.state.sleep.wakeHintSent = true;
       }
       host?.log.info('作息:睡眠时段结束', {
@@ -1285,6 +1283,48 @@ export class RhythmWorld implements World {
    * `sleep` / `wake` 用 flush（要及时送到）；`woken` 用 piggyback（只搭着正在进行的一轮走），
    * 并且超过保鲜期就作废——永远不在对话结束后突然冒出「你刚才被吵醒了」。
    */
+  /**
+   * 提示词里那一句「主人在不在电脑前」。
+   * 只有真探测到「锁屏 / 长时间没动」才给一句话事实；人在电脑前或探测失败就什么都不加——
+   * 不替 Coo 决定用哪个渠道，只告诉它此刻的事实。
+   */
+  private awayLine(presence: Presence | null): string[] {
+    if (!presence) return [];
+    const limits = this.limits();
+    if (!limits.awayHint) return [];
+    const user = this.opts.ownerName() || (this.opts.language() === 'zh' ? 'ta' : 'the person');
+    if (presence.locked === true) {
+      return [awaySentence(this.opts.language(), { kind: 'locked' }, user)];
+    }
+    if (presence.idleSeconds !== null && presence.idleSeconds >= limits.awayIdleMinutes * 60) {
+      return [awaySentence(this.opts.language(), { kind: 'idle', idleMinutes: Math.round(presence.idleSeconds / 60) }, user)];
+    }
+    return [];
+  }
+
+  /**
+   * 先探测主人此刻在不在，再发提示词。
+   * 睡眠三连（上床预告 / 睡着 / 醒来）都要带上这句事实：Coo 想开口时才知道该不该用气泡。
+   * 探测失败就照常发，只是不带在场事实。
+   */
+  private sendHintAfterProbe(
+    kind: HintKind,
+    now: number,
+    vars: { by?: string; count?: number; type?: string; diary?: string; user?: string; date?: string } = {},
+    extraLines: readonly string[] = [],
+  ): void {
+    if (!this.host) return;
+    if (!this.limits().awayDetection) {
+      this.sendHint(kind, now, vars, extraLines);
+      return;
+    }
+    void this.currentPresence()
+      .catch(() => UNKNOWN_PRESENCE())
+      .then((presence) => {
+        this.sendHint(kind, now, vars, [...this.awayLine(presence), ...extraLines]);
+      });
+  }
+
   private sendHint(
     kind: HintKind,
     now: number,

@@ -77,6 +77,22 @@ const UNANSWERED_FACT: Record<ModelLanguage, (user: string) => string> = {
   en: () => 'You spoke up earlier and nobody has answered yet.',
 };
 
+/** 主人在不在电脑前的一句话事实。锁屏与空闲互斥（调用方先判），两边共用同一套措辞。 */
+export function awaySentence(
+  language: ModelLanguage,
+  away: { kind: 'locked' } | { kind: 'idle'; idleMinutes: number },
+  user: string,
+): string {
+  if (away.kind === 'locked') {
+    return language === 'zh'
+      ? `${user}现在不在电脑前（屏幕锁着）。`
+      : `${user} is not at the computer right now (the screen is locked).`;
+  }
+  return language === 'zh'
+    ? `电脑已经 ${away.idleMinutes} 分钟没动过了，${user}或许不在电脑前。`
+    : `The computer has been idle for ${away.idleMinutes} minutes; ${user} may not be at the desk.`;
+}
+
 /**
  * 拼出叫醒正文。
  * `round` 驱动收尾句轮换（防复读）；引用存在时给两行，总长超限就先丢引用。
@@ -86,18 +102,7 @@ export function nudgeText(language: ModelLanguage, line: NudgeLine): string {
   const optional: string[] = [];
   const quotes: string[] = [];
   // 锁屏与空闲互斥：锁屏只说锁屏，没锁才说空闲
-  if (line.away) {
-    if (line.away.kind === 'locked') {
-      optional.push(language === 'zh'
-        ? `${user}现在不在电脑前（屏幕锁着）。`
-        : `${user} is not at the computer right now (the screen is locked).`);
-    } else {
-      const idle = line.away.idleMinutes;
-      optional.push(language === 'zh'
-        ? `电脑已经 ${idle} 分钟没动过了，${user}或许不在电脑前。`
-        : `The computer has been idle for ${idle} minutes; ${user} may not be at the desk.`);
-    }
-  }
+  if (line.away) optional.push(awaySentence(language, line.away, user));
   if (line.quoteUser) {
     quotes.push(language === 'zh'
       ? `${user}最后一句（${line.quoteUser.at}）：「${line.quoteUser.text}」`

@@ -1458,6 +1458,8 @@ const usePresence = (h, presence) => {
 const settlePresence = async (h) => {
   const pending = h.world.nudgePromise;
   if (pending) await pending;
+  // 提示词是先探测再发，异步落到 pushDeferred；让 then 跑完再断言
+  await new Promise((resolve) => setTimeout(resolve, 20));
 };
 
 console.log('presence: locked shows in the prompt:');
@@ -1721,6 +1723,64 @@ console.log('dream: off, no plan; disturbed, cancelled:');
   check('no room to delay means the night is skipped', e.world.state.sleep.dreamPlan === null);
   check('and no dream hint is sent', !e.hints.some((x) => x.spec.meta.kind === 'dream'));
   await e.world.stop();
+
+console.log('presence: the sleep hints carry the live state:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const h = harness({ sleepWindow: '22:00-08:00', awayDetection: true, awayIdleMinutes: 10 });
+  usePresence(h, { locked: false, idleSeconds: 0 });
+  await boot(h);
+  advance(10); // 22:00 预告
+  h.world.tick();
+  await settlePresence(h);
+  const bedtime = String(h.hints.find((x) => x.spec.meta.kind === 'bedtime')?.spec.render());
+  check('at the desk: no away fact in the bedtime notice', !bedtime.includes('不在电脑前'), bedtime);
+  check('the bedtime notice keeps its own wording', bedtime.includes('该准备睡觉了'), bedtime);
+
+  usePresence(h, { locked: true, idleSeconds: 0 });
+  h.world.presenceCache = null;
+  advance(20); // 22:20 正式入睡，这时人已经锁屏走开
+  h.world.tick();
+  await settlePresence(h);
+  const sleep = String(h.hints.find((x) => x.spec.meta.kind === 'sleep')?.spec.render());
+  check('the asleep notice says the screen is locked', sleep.includes('不在电脑前（屏幕锁着）'), sleep);
+  check('the away fact sits above the options', sleep.indexOf('屏幕锁着') < sleep.indexOf('躺好'), sleep);
+
+  usePresence(h, { locked: false, idleSeconds: 1200 });
+  h.world.presenceCache = null;
+  advance(580); // 08:00 醒来，人在忙别的，电脑静了 20 分钟
+  h.world.tick();
+  await settlePresence(h);
+  const wake = String(h.hints.find((x) => x.spec.meta.kind === 'wake')?.spec.render());
+  check('the wake notice reports the idle minutes', wake.includes('电脑已经 20 分钟没动过了'), wake);
+  await h.world.stop();
+}
+
+console.log('presence: the away fact follows awayHint and a failed probe adds nothing:');
+{
+  at('2026-11-02T21:50:00+08:00');
+  const off = harness({ sleepWindow: '22:00-08:00', awayDetection: true, awayHint: false });
+  usePresence(off, { locked: true, idleSeconds: 0 });
+  await boot(off);
+  advance(10);
+  off.world.tick();
+  await settlePresence(off);
+  const quiet = String(off.hints.find((x) => x.spec.meta.kind === 'bedtime')?.spec.render());
+  check('awayHint off keeps the notice clean', !quiet.includes('不在电脑前'), quiet);
+  await off.world.stop();
+
+  at('2026-11-02T21:50:00+08:00');
+  const bad = harness({ sleepWindow: '22:00-08:00', awayDetection: true });
+  bad.world.opts.detectPresence = async () => { throw new Error('probe failed'); };
+  await boot(bad);
+  advance(10);
+  bad.world.tick();
+  await settlePresence(bad);
+  const text = String(bad.hints.find((x) => x.spec.meta.kind === 'bedtime')?.spec.render());
+  check('a failed probe still sends the notice', text.includes('该准备睡觉了'), text);
+  check('and invents no presence fact', !text.includes('不在电脑前') && !text.includes('没动过'), text);
+  await bad.world.stop();
+}
 }
 
 console.log('dream: an older messages.json gets the new keys:');
