@@ -133,7 +133,9 @@
 | v1.0.7 | 2026-11-05 | 锁屏/空闲互斥与措辞；npm latest + GitHub Release；从 npm 安装验证 |
 | v1.0.8 | 2026-11-10 | 做梦安静检查与顺延、掷骰日志、status 计划；npm latest + GitHub Release |
 | v1.1.0 (fb081fd) | 2026-11-12 13:40 | 睡前宽限期；本地安装过夜验证通过（未发版） |
-| v1.1.1 (b17e0ca) | 2026-11-13 09:42 | 睡眠三连提示带在场事实；本地安装，待今夜验证 |
+| v1.1.1 (b17e0ca) | 2026-11-13 09:42 | 睡眠提示带在场事实；本地安装过夜验证通过（未发版） |
+| v1.1.2 (10ddebf) | 2026-11-14 11:15 | 正式入睡不带在场事实；旧出厂文案自动迁移；本地安装，待今夜验证 |
+
 ## 6. 一句话纪律
 
 > **测试是验证插件，不是训练桌宠。** 任何会反复触发它说话的测试手段（缩短间隔、反复戳、
@@ -179,3 +181,15 @@
 | 08:00:03 | `作息:睡眠时段结束 wokeCount=0` + `kind=wake` | 整夜零被吵醒 ✔ |
 
 发现的问题：22:20 的入睡文案仍是 1.1.0 之前的旧出厂原文（「你的眼皮越来越重…道个晚安…躺好」）。不是代码没改，而是 `messages.json` 只在缺失时生成、之后只补缺失键不覆盖已有内容，而主人这份文件一字未改，于是旧 `sleep` 原样留着，和新 `bedtime` 说了几乎一样的话。1.1.2 增加迁移：与旧出厂默认完全一致的条目跟着换成新默认，改过的不动；同时正式入睡不再带在场事实。
+
+## 10. 2026-11-14 · 1.1.2 安装记录
+
+| 项 | 现场 |
+| --- | --- |
+| 打包 | `cortico-world-rhythm-1.1.2.tgz`（87546 字节） |
+| 安装 | `pnpm remove` → `pnpm add <tgz> --ignore-workspace --store-dir <app>\data\pnpm\store\v11 --config.minimumReleaseAge=0` |
+| 重启 | `POST http://127.0.0.1:17788/api/run/restart` → `result: 本地关机完成(6 步全部走完)` |
+| 迁移生效 | `<app>\data\home\companion\data\rhythm\messages.json` 里 `zh.sleep` / `en.sleep` 已换成「一阵强烈的睡意袭来」，其余键未动；原文件备份为 `messages.json.bak-before-1.1.2` |
+| 启动 | run `r-20261114-111516-e06b`，`作息:启动` 显示 `bedtimeGraceMinutes 20`、`sleepWindow 22:00-08:00`、`sleepHint/wakeHint true`、`nudgesToday 2`；无 warn/error |
+
+迁移预演方法（下次仍可用）：把线上 `messages.json` 复制到临时目录，用 `scripts/run.ps1 <脚本>` 跑 `loadMessages(copy)`，比对前后每个键。
