@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 发给桌宠的提示文案（「该睡了」「该醒了」「你被吵醒了」），独立成一个可编辑的 JSON 文件。
  *
  * 为什么单独放：这几句是「给 Coo 看的话」，调语气属于高阶玩法，但不适合塞进设置页的旋钮海洋。
@@ -57,6 +57,36 @@ export const DEFAULT_MESSAGES: RhythmMessages = {
   },
 };
 
+/**
+ * 旧版本随包发出的默认文案。
+ *
+ * 为什么需要：`messages.json` 只在缺失时生成一次，之后永不覆盖——这是对的（用户可能改过）。
+ * 但如果用户**一字没改**，文件里留着的就是旧默认值，升级后还在用老句子。
+ * 睡眠拆成两段那次就踩了这个坑：`sleep` 仍是「到睡觉的时间了…道个晚安…躺好」，
+ * 和新的 `bedtime` 说几乎一样的话。
+ *
+ * 规则：内容与旧默认完全一致 = 没人改过，跟着换成新默认；差一个字都不动。
+ */
+const LEGACY_DEFAULTS: Record<MessageLanguage, Partial<Record<HintKind, readonly string[]>>> = {
+  zh: {
+    sleep: [
+      '[{at}] [作息] 你的眼皮越来越重，到睡觉的时间了。\n想说话就用你平时的方式道个晚安；不想说话，就用一个能让你躺下的动作（比如睡眠）躺好。\n不管选哪种，做完就结束这一轮。',
+    ],
+  },
+  en: {
+    sleep: [
+      '[{at}] [rhythm] Your eyelids are getting heavy; it is time to sleep.\nIf you want to talk, say goodnight in your usual way; if not, lie down with an action that lets you sleep.\nEither way, end this turn when you are done.',
+    ],
+  },
+};
+
+/** 这份文案是不是旧版本的出厂默认（一字未改）。 */
+function isLegacyDefault(language: MessageLanguage, kind: HintKind, value: unknown): boolean {
+  const list = LEGACY_DEFAULTS[language][kind];
+  if (!list || typeof value !== 'string') return false;
+  return list.includes(value);
+}
+
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** 文案文件路径。 */
@@ -89,6 +119,7 @@ function normalize(raw: unknown): { messages: RhythmMessages; problems: string[]
       const value = (table as Record<string, unknown>)[kind];
       if (value === undefined) continue;
       if (!isText(value)) problems.push(`${language}.${kind} must be a non-empty string`);
+      else if (isLegacyDefault(language, kind, value)) out[language][kind] = DEFAULT_MESSAGES[language][kind];
       else out[language][kind] = value;
     }
   }
@@ -123,6 +154,13 @@ export function loadMessages(file: string): { messages: RhythmMessages; problems
         const target = table as Record<string, unknown>;
         for (const [key, value] of Object.entries(DEFAULT_MESSAGES[language])) {
           if (!(key in target)) { target[key] = value; changed = true; }
+        }
+        // 一字没改的旧出厂默认：跟着换成新默认（改过的保持原样）
+        for (const kind of ['bedtime', 'sleep', 'wake', 'woken', 'dream'] as const) {
+          if (isLegacyDefault(language, kind, target[kind])) {
+            target[kind] = DEFAULT_MESSAGES[language][kind];
+            changed = true;
+          }
         }
       }
       if (changed) {

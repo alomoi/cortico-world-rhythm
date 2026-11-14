@@ -1743,8 +1743,8 @@ console.log('presence: the sleep hints carry the live state:');
   h.world.tick();
   await settlePresence(h);
   const sleep = String(h.hints.find((x) => x.spec.meta.kind === 'sleep')?.spec.render());
-  check('the asleep notice says the screen is locked', sleep.includes('不在电脑前（屏幕锁着）'), sleep);
-  check('the away fact sits above the options', sleep.indexOf('屏幕锁着') < sleep.indexOf('躺好'), sleep);
+  check('the asleep notice stays bare even when the screen is locked', !sleep.includes('不在电脑前') && !sleep.includes('屏幕锁着'), sleep);
+  check('the asleep notice only asks to lie down', sleep.includes('躺好'), sleep);
 
   usePresence(h, { locked: false, idleSeconds: 1200 });
   h.world.presenceCache = null;
@@ -1797,8 +1797,35 @@ console.log('dream: an older messages.json gets the new keys:');
   await h.world.stop();
 }
 
-console.log('a fact line survives the away line:');
+console.log('dream: a factory default that was never edited follows the new default:');
 {
+  const h = harness();
+  const file = messagesPath(join(h.dir, 'deployment', 'data'));
+  mkdirSync(dirname(file), { recursive: true });
+  // 1.1.0 之前的出厂 sleep 文案，一字未改
+  const legacy = '[{at}] [作息] 你的眼皮越来越重，到睡觉的时间了。\n想说话就用你平时的方式道个晚安；不想说话，就用一个能让你躺下的动作（比如睡眠）躺好。\n不管选哪种，做完就结束这一轮。';
+  writeFileSync(file, JSON.stringify({ version: 1, zh: { sleep: legacy }, en: {} }), 'utf8');
+  await boot(h);
+  const migrated = JSON.parse(readFileSync(file, 'utf8'));
+  check('the untouched legacy default is replaced', migrated.zh.sleep !== legacy, JSON.stringify(migrated.zh.sleep));
+  check('and it now asks only to lie down', migrated.zh.sleep.includes('一阵强烈的睡意'), JSON.stringify(migrated.zh.sleep));
+  await h.world.stop();
+}
+
+console.log('dream: an edited default is left alone:');
+{
+  const h = harness();
+  const file = messagesPath(join(h.dir, 'deployment', 'data'));
+  mkdirSync(dirname(file), { recursive: true });
+  const edited = '[{at}] [作息] 你的眼皮越来越重，到睡觉的时间了。\n想说话就用你平时的方式道个晚安；不想说话，就用一个能让你躺下的动作（比如睡眠）躺好。\n不管选哪种，做完就结束这一轮。';
+  writeFileSync(file, JSON.stringify({ version: 1, zh: { sleep: `${edited} ` }, en: {} }), 'utf8');
+  await boot(h);
+  const migrated = JSON.parse(readFileSync(file, 'utf8'));
+  check('a single changed character keeps the whole line', migrated.zh.sleep === `${edited} `, JSON.stringify(migrated.zh.sleep));
+  await h.world.stop();
+}
+
+console.log('a fact line survives the away line:');{
   at('2026-11-02T09:00:00+08:00');
   const h = harness({ awayDetection: true, willingnessEnabled: true });
   usePresence(h, { locked: true, idleSeconds: 0 });

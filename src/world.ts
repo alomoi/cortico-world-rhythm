@@ -1061,7 +1061,8 @@ export class RhythmWorld implements World {
       graceMinutes: this.graceMinutes(window, limits),
     });
     this.persist();
-    if (limits.sleepHint) this.sendHintAfterProbe('sleep', now);
+    // 正式入睡不带在场事实：二十分钟前的预告已经说过一次了，这里只需要「躺下」这一件事。
+    if (limits.sleepHint) this.sendHint('sleep', now);
   }
 
   /** 离开时段；离开睡眠时段时发「该醒了」并收尾这一夜。 */
