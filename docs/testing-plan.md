@@ -233,6 +233,11 @@ run `r-20261114-190647-8781`（19:06:47 起，跨越整夜），真实部署参�
 
 这次**没有跑整周期真机测试**（维护者判断：第 1 条与逻辑无关、第 2 条当前部署没有可测场景），也**没有装到本地**；装机后的观感确认留到下一次真机测试一起看。
 
+2026-11-15 收尾：主人决定「1.1.3 不本地装，直接去装市场版本」，本地 `file:` 依赖已用 `pnpm remove` 解除
+（pnpm 没有单独的 unlink；`data/extensions/package.json` / `pnpm-lock.yaml` / `node_modules` 均已无 rhythm），
+`pnpm-workspace.yaml` 的 rhythm 行补了 `|| 1.1.3`，否则市场装 1.1.3 会被 `minimumReleaseAge` 拦住。
+`worlds.rhythm` 配置段与 `data/rhythm/{state,status,messages}.json` 全部保留，装完市场版可直接接上。
+
 装机后要亲眼确认的三件事（下次真机测试一起看）：
 1. **称呼**：设置页「基础作息」第一项出现「提示词里怎么称呼你」，**留空时**叫醒正文仍写「ta没有跟你说话」，**填「主人」后**下一行变成「主人没有跟你说话」（改完立即生效，不用重启）。
 2. **旧行为不变**：`worlds.rhythm.userName` 空着时，`{user}` 与 `desktop-pet.user` 时期一致，即老用户看不出差别。
