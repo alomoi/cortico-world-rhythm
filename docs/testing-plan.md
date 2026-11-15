@@ -220,7 +220,7 @@ run `r-20261114-190647-8781`（19:06:47 起，跨越整夜），真实部署参�
 
 审查意见：<https://github.com/alomoi/cortico-world-rhythm/issues/1>（只读源码，未执行）。已在本仓库 `4dcc555` 处理，回复见 issue 评论。
 
-本地验证（`check.mjs` + `smoke.mjs`，350 条断言全绿）：
+本地验证（`check.mjs` + `smoke.mjs`，352 条断言全绿）：
 
 | 用例 | 断言 | 结论 |
 | --- | --- | --- |

@@ -1285,7 +1285,9 @@ export class RhythmWorld implements World {
    */
   private userName(): string {
     const raw = this.opts.cfg.userName;
-    const name = typeof raw === 'string' ? raw.trim() : '';
+    // 称呼会原样进提示词正文，所以压平空白、砍掉换行：免得一份分享出去的配置
+    // 靠这个字段往正文里塞额外的一行指令。
+    const name = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim().slice(0, 24) : '';
     return name || (this.opts.language() === 'zh' ? 'ta' : 'the person');
   }
 
