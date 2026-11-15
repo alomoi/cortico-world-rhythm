@@ -69,21 +69,55 @@ function selfSpeechText(event: EventEnvelope): string {
 }
 
 /**
+ * 从事件里能看出的会话类型：私聊 / 群聊；看不出返回 null。
+ *
+ * 渠道插件把会话信息放在 `meta.conv.kind`（微信桥用 `private`），有的只用 `meta.kind`
+ * （`message/private`）。这里只认关键词，不认具体渠道：群聊里说话的人可能不是主人，
+ * 所以「引用主人原话」这件事必须先能分辨出会话类型。
+ */
+export function conversationKindOf(event: EventEnvelope): 'private' | 'group' | null {
+  const meta = (event.meta ?? {}) as Record<string, unknown>;
+  const candidates: unknown[] = [];
+  const conv = meta.conv;
+  if (conv && typeof conv === 'object') candidates.push((conv as Record<string, unknown>).kind);
+  candidates.push(meta.kind, meta.chatType, meta.conversationType);
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const kind = candidate.toLowerCase();
+    if (kind.includes('private') || kind.includes('direct') || kind.includes('dm') || kind.includes('friend')) {
+      return 'private';
+    }
+    if (kind.includes('group') || kind.includes('channel') || kind.includes('room') || kind.includes('guild')) {
+      return 'group';
+    }
+  }
+  return null;
+}
+
+/**
  * 从事件序列里取最近一条人侧消息与最后一条自述发言。
- * `isPerson` 与叫醒判定共用同一套（渠道无关），保证口径一致。
+ * `isPerson` 与叫醒判定共用同一套（渠道无关），保证口径一致；
+ * `isQuotable` 额外筛「这条原话能不能引用」（例如只引用私聊）。
  */
 export function buildThread(
   events: readonly EventEnvelope[],
-  opts: { isPerson: (event: EventEnvelope) => boolean },
+  opts: {
+    isPerson: (event: EventEnvelope) => boolean;
+    isQuotable?: (event: EventEnvelope) => boolean;
+  },
 ): Thread {
   let lastUser: ThreadLine | null = null;
   let lastSelf: (ThreadLine & { answered: boolean }) | null = null;
+  // 「它上次开口有没有被接」看的是所有对话；引用另按 isQuotable 收紧
+  let lastAnyPersonAt = 0;
 
   for (const event of events) {
     const at = Date.parse(event.ts);
     if (!Number.isFinite(at)) continue;
 
     if (opts.isPerson(event)) {
+      if (!lastAnyPersonAt || at >= lastAnyPersonAt) lastAnyPersonAt = at;
+      if (opts.isQuotable && !opts.isQuotable(event)) continue;
       const text = sanitizeQuote(event.text);
       if (text && (!lastUser || at >= lastUser.at)) lastUser = { at, text };
       continue;
@@ -94,7 +128,7 @@ export function buildThread(
     if (!lastSelf || at >= lastSelf.at) lastSelf = { at, text, answered: false };
   }
 
-  // 它说完之后有人接话 → 不算「没人接」
-  if (lastSelf && lastUser && lastUser.at > lastSelf.at) lastSelf.answered = true;
+  // 它说完之后有人接话 → 不算「没人接」；这里用全部人侧事件，不受引用筛选影响
+  if (lastSelf && lastAnyPersonAt > lastSelf.at) lastSelf.answered = true;
   return { lastUser, lastSelf };
 }

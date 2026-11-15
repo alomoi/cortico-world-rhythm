@@ -43,6 +43,10 @@ export interface RhythmUi {
   configAwayDescription: string;
   configAdvancedTitle: string;
   configAdvancedDescription: string;
+  userNameTitle: string;
+  userNameDescription: string;
+  quotePrivateTitle: string;
+  quotePrivateDescription: string;
   quietTitle: string;
   quietDescription: string;
   repeatTitle: string;
@@ -146,6 +150,10 @@ const zh: RhythmUi = {
   configAdvancedTitle: '高级与排障',
   configAdvancedDescription: '回执核对、影子模式、上下文引用、说话工具识别与诊断模式。',
   configDescription: '安静一段时间后叫醒桌宠，让桌宠自己决定说不说话、做点什么，慢慢过上自己的日子。改这里立即生效。',
+  userNameTitle: '提示词里怎么称呼你',
+  userNameDescription: '填上你的名字或称呼，叫醒、睡眠提示与做梦的正文里就用它；留空则用「ta」。这是作息自己的设置，不读其他模块的配置。',
+  quotePrivateTitle: '只引用私聊里的原话',
+  quotePrivateDescription: '开着时，群聊、频道里别人说的话不会被当成「你最后一句」引用；关掉则任何渠道的人侧消息都可能被引用。默认开。',
   quietTitle: '安静多少分钟后叫醒',
   quietDescription: '没有人跟桌宠说话多久之后叫醒桌宠一次；0 表示关掉叫醒。',
   repeatTitle: '再次叫醒间隔',
@@ -263,6 +271,10 @@ const en: RhythmUi = {
   configAdvancedTitle: 'Advanced & diagnostics',
   configAdvancedDescription: 'Receipt checks, shadow mode, context quotes, speech tool detection and diagnostics.',
   configDescription: 'After a quiet stretch the app wakes the bot so it can decide for itself whether to speak or do something, and slowly settle into a life of its own. Changes apply immediately.',
+  userNameTitle: 'How the prompts address you',
+  userNameDescription: 'Your name or nickname, used in wake-ups, sleep lines and dreams. Leave it empty to fall back to "the person". This is the rhythm module\'s own setting; it does not read another module\'s config.',
+  quotePrivateTitle: 'Quote private chats only',
+  quotePrivateDescription: 'When on, what other people say in a group or channel is never quoted as "your last line"; when off, any person-side message may be quoted. On by default.',
   quietTitle: 'Wake after quiet minutes',
   quietDescription: 'How long nobody talks to the bot before it is woken once; 0 turns the timer off.',
   repeatTitle: 'Wake again after',

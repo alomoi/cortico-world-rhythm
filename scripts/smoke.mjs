@@ -172,6 +172,8 @@ console.log('config defaults:');
   check('dryRun defaults off', d.dryRun === false);
   check('contextAware defaults on', d.contextAware === true);
   check('contextQuotes defaults on', d.contextQuotes === true);
+  check('quotePrivateOnly defaults on', d.quotePrivateOnly === true);
+  check('userName defaults empty (falls back to ta)', d.userName === '');
   check('contextStaleMinutes defaults to 120', d.contextStaleMinutes === 120);
   check('awayDetection defaults on', d.awayDetection === true);
   check('awayIdleMinutes defaults to 10', d.awayIdleMinutes === 10);
@@ -1280,7 +1282,60 @@ console.log('a context handoff triggers quotes even when the quiet is short:');
   await h.world.stop();
 }
 
-console.log('speech is captured from the stream for channels without self events:');
+console.log('a group message is never quoted as the person\'s last line:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ contextStaleMinutes: 10 });
+  await boot(h);
+  advance(1);
+  addEvent(h, 'qq.message', { meta: { conv: { kind: 'group', id: 'g1' } } });
+  h.events[h.events.length - 1].text = '群友甲说的话';
+  advance(1);
+  addEvent(h, 'qq.message', { meta: { conv: { kind: 'private', id: 'u1' } } });
+  h.events[h.events.length - 1].text = '私聊里说的话';
+  advance(15);
+  h.world.tick();
+  const text = String(h.pushes[0].spec.render());
+  check('the private line is quoted', text.includes('私聊里说的话'), text);
+  check('the group line is not quoted', !text.includes('群友甲说的话'), text);
+  await h.world.stop();
+}
+
+console.log('quotes may come from a group when quotePrivateOnly is off:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ contextStaleMinutes: 10, quotePrivateOnly: false });
+  await boot(h);
+  advance(1);
+  addEvent(h, 'qq.message', { meta: { conv: { kind: 'group', id: 'g1' } } });
+  h.events[h.events.length - 1].text = '群友甲说的话';
+  advance(15);
+  h.world.tick();
+  const text = String(h.pushes[0].spec.render());
+  check('the group line is quoted when the switch is off', text.includes('群友甲说的话'), text);
+  await h.world.stop();
+}
+
+console.log('a group message still counts as someone talking:');
+{
+  at('2026-11-02T09:00:00+08:00');
+  const h = harness({ contextStaleMinutes: 10 });
+  await boot(h);
+  advance(1);
+  h.events.push({
+    cursor: h.events.length + 1, type: 'desktop-pet.self', ts: new Date(clock).toISOString(),
+    source: 'desktop-pet', origin: 'external', text: '我先说一句', meta: { kind: 'say', beats: [{ text: '我先说一句' }] },
+  });
+  advance(1);
+  addEvent(h, 'qq.message', { meta: { conv: { kind: 'group', id: 'g1' } } });
+  advance(15);
+  h.world.tick();
+  const text = String(h.pushes[0].spec.render());
+  check('its own line is not reported as unanswered', !text.includes('还没人接话'), text);
+  await h.world.stop();
+}
+
+
 {
   at('2026-11-02T09:00:00+08:00');
   const h = harness({ repeatMinutes: 10, contextStaleMinutes: 1 });
@@ -1620,7 +1675,7 @@ console.log('dream: one nightly plan, the bot is asked to write the diary:');
   const seq = [0.5, 0.5, 0];
   let n = 0;
   h.world.opts.random = () => seq[Math.min(n++, seq.length - 1)];
-  h.world.opts.ownerName = () => '主人';
+  h.world.opts.cfg.userName = '主人';
   await boot(h);
   advance(10); // 22:00 入夜（预告）
   h.world.tick();
@@ -1945,7 +2000,7 @@ console.log('willingness: four emotional levels with the owner name:');
   for (let level = 1; level <= 4; level += 1) {
     at('2026-11-02T09:00:00+08:00');
     const h = harness({ repeatMinutes: 10, willingnessEnabled: true });
-    h.world.opts.ownerName = () => '主人';
+    h.world.opts.cfg.userName = '主人';
     await boot(h);
     advance(15);
     h.world.tick();

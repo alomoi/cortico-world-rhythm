@@ -24,7 +24,6 @@
  * ──────────────────────────────────────────────────────────────
  */
 
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorldDescribe, WorldDefinition } from 'cortico/world.ts';
 import { RHYTHM_DEFAULTS, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
@@ -32,18 +31,6 @@ import { modelLanguageOfConfigFile } from './model-text.ts';
 import { RhythmWorld } from './world.ts';
 
 /** 自描述：没有工具，只推出叫醒与睡眠提示两类事件。供扩展页与扩展市场阅读，不进提示词。 */
-/** 读桌宠对主人的称呼；读不到返回空串，由 World 决定回退成 ta / the person。 */
-function ownerNameOfConfigFile(file: string): string {
-  try {
-    const raw = JSON.parse(readFileSync(file, 'utf8')) as {
-      worlds?: Record<string, Record<string, unknown>>;
-    };
-    const user = raw.worlds?.['desktop-pet']?.user;
-    return typeof user === 'string' ? user.trim() : '';
-  } catch {
-    return '';
-  }
-}
 const DESCRIBE: WorldDescribe = {
   tools: [],
   events: [
@@ -82,8 +69,8 @@ const definition: WorldDefinition<RhythmConfigSection> = {
     timezone: ctx.timezone,
     dataDir: ctx.dataDir,
     botDir: ctx.botDir,
+    // 语言读部署 config.json 顶层的 language（CoreConfig 的公开字段），不读别的 World 的配置段
     language: () => modelLanguageOfConfigFile(join(ctx.botDir, 'config.json')),
-    ownerName: () => ownerNameOfConfigFile(join(ctx.botDir, 'config.json')),
   }),
   describe: DESCRIBE,
 };

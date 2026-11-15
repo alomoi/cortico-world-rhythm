@@ -38,7 +38,7 @@ import type { Language } from 'cortico/core/language.ts';
 import { shortTime } from 'cortico/core/util.ts';
 import { rhythmConfigGroups, RHYTHM_ID, type RhythmConfigSection } from './config.ts';
 import { fillTemplate, loadMessages, messagesPath, type HintKind } from './messages.ts';
-import { buildThread, sanitizeQuote } from './context.ts';
+import { buildThread, conversationKindOf, sanitizeQuote } from './context.ts';
 import { awaySentence, nudgeText, type ModelLanguage, type NudgeQuote } from './model-text.ts';
 import { detectPresence, UNKNOWN_PRESENCE, type Presence } from './presence.ts';
 import { appendDebugLine, pluginVersion, writeDiagnostics } from './diagnostics.ts';
@@ -115,8 +115,6 @@ export interface RhythmOptions {
   botDir: string;
   /** 随机源；测试可注入，缺省 Math.random。 */
   random?: () => number;
-  /** 主人对它的称呼（配置里的名字）；取不到用 ta。 */
-  ownerName: () => string;
   /** 模型文本语言；每条事件渲染时现取。 */
   language: () => ModelLanguage;
   /** 主人状态探测；测试可注入，缺省用本机 Windows 探测。 */
@@ -142,6 +140,7 @@ interface Limits {
   dryRun: boolean;
   contextAware: boolean;
   contextQuotes: boolean;
+  quotePrivateOnly: boolean;
   contextStaleMinutes: number;
   awayDetection: boolean;
   awayIdleMinutes: number;
@@ -678,6 +677,7 @@ export class RhythmWorld implements World {
       dryRun: cfg.dryRun === true,
       contextAware: cfg.contextAware !== false,
       contextQuotes: cfg.contextQuotes !== false,
+      quotePrivateOnly: cfg.quotePrivateOnly !== false,
       contextStaleMinutes: Math.floor(numberIn(cfg.contextStaleMinutes, 120, 10, 1440)),
       awayDetection: cfg.awayDetection !== false,
       awayIdleMinutes: Math.floor(numberIn(cfg.awayIdleMinutes, 10, 1, 720)),
@@ -1085,7 +1085,7 @@ export class RhythmWorld implements World {
             : `You dreamed a ${dream.type} dream last night${diary ? `, recorded in ${diary}` : ''}.`);
         }
         if (extra.length) {
-          extra.push(language === 'zh' ? `要不要跟${this.opts.ownerName() || 'ta'}提，由你决定。` : 'Whether to tell the person is up to you.');
+          extra.push(language === 'zh' ? `要不要跟${this.userName()}提，由你决定。` : 'Whether to tell the person is up to you.');
         }
         this.sendHintAfterProbe('wake', now, {}, extra);
         this.state.sleep.wakeHintSent = true;
@@ -1146,7 +1146,7 @@ export class RhythmWorld implements World {
     const delta = ((targetMinute - nowMinute) + 1440) % 1440;
     const types = this.readMessages()[this.opts.language()].dreamTypes;
     const rawType = types[Math.min(types.length - 1, Math.floor(random() * types.length))] ?? '梦';
-    const type = fillTemplate(rawType, { user: this.opts.ownerName() || (this.opts.language() === 'zh' ? 'ta' : 'the person') });
+    const type = fillTemplate(rawType, { user: this.userName() });
     this.state.sleep.dreamPlan = { at: now + delta * 60_000, type };
     this.host?.log.info('作息:安排了一场梦', {
       at: new Date(this.state.sleep.dreamPlan.at).toISOString(),
@@ -1280,20 +1280,24 @@ export class RhythmWorld implements World {
   }
 
   /**
-   * 发一条睡眠提示。
-   * `sleep` / `wake` 用 flush（要及时送到）；`woken` 用 piggyback（只搭着正在进行的一轮走），
-   * 并且超过保鲜期就作废——永远不在对话结束后突然冒出「你刚才被吵醒了」。
+   * 提示词里怎么称呼主人：只读本 World 自己的 `userName`。
+   * 不去读别的模块（比如桌宠 World）的配置 —— 那是别人的格式，随时会变。
    */
+  private userName(): string {
+    const raw = this.opts.cfg.userName;
+    const name = typeof raw === 'string' ? raw.trim() : '';
+    return name || (this.opts.language() === 'zh' ? 'ta' : 'the person');
+  }
+
   /**
-   * 提示词里那一句「主人在不在电脑前」。
-   * 只有真探测到「锁屏 / 长时间没动」才给一句话事实；人在电脑前或探测失败就什么都不加——
+   * 睡眠/醒来提示里要不要加一句「人现在在不在电脑前」。
    * 不替 Coo 决定用哪个渠道，只告诉它此刻的事实。
    */
   private awayLine(presence: Presence | null): string[] {
     if (!presence) return [];
     const limits = this.limits();
     if (!limits.awayHint) return [];
-    const user = this.opts.ownerName() || (this.opts.language() === 'zh' ? 'ta' : 'the person');
+    const user = this.userName();
     if (presence.locked === true) {
       return [awaySentence(this.opts.language(), { kind: 'locked' }, user)];
     }
@@ -1305,8 +1309,8 @@ export class RhythmWorld implements World {
 
   /**
    * 先探测主人此刻在不在，再发提示词。
-   * 睡眠三连（上床预告 / 睡着 / 醒来）都要带上这句事实：Coo 想开口时才知道该不该用气泡。
-   * 探测失败就照常发，只是不带在场事实。
+   * 上床预告与醒来这两条要带上这句事实：Coo 想开口时才知道该不该用气泡。
+   * 正式入睡那条不带（二十分钟前的预告已经说过一次了）。探测失败就照常发，只是不带在场事实。
    */
   private sendHintAfterProbe(
     kind: HintKind,
@@ -1342,7 +1346,7 @@ export class RhythmWorld implements World {
       count: vars.count === undefined ? '' : String(vars.count),
       type: vars.type ?? '',
       diary: vars.diary ?? '',
-      user: vars.user ?? (this.opts.ownerName() || (this.opts.language() === 'zh' ? 'ta' : 'the person')),
+      user: vars.user ?? this.userName(),
       date: vars.date ?? '',
     });
     // 附加事实放在开头之后、行为选项之前：别让「结束这一轮」把梦挤到后面去
@@ -1516,7 +1520,11 @@ export class RhythmWorld implements World {
     let quoteSelf: NudgeQuote | null = null;
 
     if (limits.contextAware) {
-      const thread = buildThread(this.storeEvents(), { isPerson: (event) => this.isPersonActivity(event) });
+      const thread = buildThread(this.storeEvents(), {
+        isPerson: (event) => this.isPersonActivity(event),
+        // 群聊里说话的人不一定是主人；开着 quotePrivateOnly 时只引用私聊里的原话
+        isQuotable: (event) => !limits.quotePrivateOnly || conversationKindOf(event) !== 'group',
+      });
       // 流里抓到的「它刚说的话」比 self 事件更新时优先用它（覆盖微信这类渠道）
       const said = this.lastSaid && (!thread.lastSelf || this.lastSaid.at > thread.lastSelf.at)
         ? { at: this.lastSaid.at, text: this.lastSaid.text, answered: thread.lastUser !== null && thread.lastUser.at > this.lastSaid.at }
@@ -1536,8 +1544,7 @@ export class RhythmWorld implements World {
       }
     }
 
-    const owner = this.opts.ownerName();
-    const user = owner || (language === 'zh' ? 'ta' : 'the person');
+    const user = this.userName();
     let unansweredText: string | undefined;
     if (limits.willingnessEnabled && limits.willingnessHint && this.state.unanswered > 0) {
       const lines = this.readMessages()[language].willing;

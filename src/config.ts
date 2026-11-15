@@ -13,6 +13,11 @@ import { uiText } from './ui-text.ts';
 export const RHYTHM_ID = 'rhythm';
 
 export interface RhythmConfigSection extends WorldSection {
+  /**
+   * 提示词里对使用者的称呼；留空则用「ta / the person」。
+   * 这是作息自己的键：不去读桌宠 World 的 `user`，那份配置的格式没有对外承诺。
+   */
+  userName: string;
   /** 安静多少分钟后第一次叫醒 Coo；0 关闭计时（世界保持挂载但不再叫醒）。 */
   quietMinutes: number;
   /** 一次叫醒之后，若还是没人说话，隔多久再叫醒一次。 */
@@ -62,6 +67,8 @@ export interface RhythmConfigSection extends WorldSection {
   contextAware: boolean;
   /** 允许在上下文可能丢失时引用原话。 */
   contextQuotes: boolean;
+  /** 只引用私聊里的原话：群聊里说话的人可能不是主人，不能当成「主人最后一句」。 */
+  quotePrivateOnly: boolean;
   /** 安静超过这么多分钟，就认为该复习一下，允许引用。 */
   contextStaleMinutes: number;
   /** 渠道别名：`clawbridge=微信, qq=QQ`，给提示文案里的 `{by}` 用。 */
@@ -102,6 +109,7 @@ export interface RhythmConfigSection extends WorldSection {
 /** 各键的缺省值；enabled 恒为 false，是否启用由 bot 声明与部署配置决定。 */
 export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   enabled: false,
+  userName: '',
   quietMinutes: 15,
   repeatMinutes: 25,
   maxRounds: 0,
@@ -125,6 +133,7 @@ export const RHYTHM_DEFAULTS: RhythmConfigSection = {
   dryRun: false,
   contextAware: true,
   contextQuotes: true,
+  quotePrivateOnly: true,
   contextStaleMinutes: 120,
   channelAliases: 'clawbridge=微信, desktop-pet=桌宠, console=控制台, coopanion=应用, qq=QQ',
   verifySpeakReceipts: true,
@@ -149,6 +158,12 @@ function rhythmProperties(language: Language): Record<string, ConfigProperty> {
   const t = uiText(language);
   return {
 
+        [`worlds.${RHYTHM_ID}.userName`]: {
+          type: 'string',
+          title: t.userNameTitle,
+          description: t.userNameDescription,
+          'x-hot': true,
+        },
         [`worlds.${RHYTHM_ID}.quietMinutes`]: {
           type: 'integer',
           title: t.quietTitle,
@@ -372,6 +387,12 @@ function rhythmProperties(language: Language): Record<string, ConfigProperty> {
           description: t.contextQuotesDescription,
           'x-hot': true,
         },
+        [`worlds.${RHYTHM_ID}.quotePrivateOnly`]: {
+          type: 'boolean',
+          title: t.quotePrivateTitle,
+          description: t.quotePrivateDescription,
+          'x-hot': true,
+        },
         [`worlds.${RHYTHM_ID}.contextStaleMinutes`]: {
           type: 'integer',
           title: t.contextStaleTitle,
@@ -432,7 +453,7 @@ export function rhythmConfigGroups(language: Language): ConfigGroup[] {
   });
   return [
     group(owner, t.configBasicTitle, t.configBasicDescription, [
-      'quietMinutes', 'repeatMinutes', 'maxRounds', 'jitter', 'dailyCap',
+      'userName', 'quietMinutes', 'repeatMinutes', 'maxRounds', 'jitter', 'dailyCap',
       'onlyWhenIdle', 'activityIgnore', 'knownChannelsOnly',
     ]),
     group(`${owner}:sleep`, t.configSleepTitle, t.configSleepDescription, [
@@ -448,7 +469,7 @@ export function rhythmConfigGroups(language: Language): ConfigGroup[] {
       'awayDetection', 'awayIdleMinutes', 'pauseWhenLocked', 'awayHint', 'awayIdleProbe',
     ]),
     group(`${owner}:advanced`, t.configAdvancedTitle, t.configAdvancedDescription, [
-      'verifySpeakReceipts', 'contextAware', 'contextQuotes', 'contextStaleMinutes',
+      'verifySpeakReceipts', 'contextAware', 'contextQuotes', 'quotePrivateOnly', 'contextStaleMinutes',
       'speakTools', 'speakIgnore', 'speakMatchAnywhere', 'channelAliases', 'dryRun', 'debug',
     ]),
   ];
